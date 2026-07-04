@@ -151,7 +151,7 @@ _CTAID = re.compile(r"SR_CTAID\.?(X|Y|Z)")
 
 _KNOWN_BASES = {
     "S2R", "S2UR", "LDC", "LDCU", "MOV", "CS2R", "IMAD", "IADD3", "IADD",
-    "LEA", "SHF", "SHL", "SHR", "LOP3", "PRMT", "R2UR",
+    "VIADD", "LEA", "SHF", "SHL", "SHR", "LOP3", "PRMT", "R2UR", "SEL",
 }
 
 
@@ -223,7 +223,22 @@ def step(instr: Instruction, st: State, tids: dict[str, lv.Value]) -> None:
         assign(lv.varying())
         return
 
-    if base in ("IADD3", "IADD"):
+    if base == "SEL":
+        # SEL Rd, Ra, Rb, P — per-lane select. The result is one of the two
+        # sources lane-wise, so their join is a sound abstraction (exact when
+        # both agree; uniform-shift-aware otherwise).
+        if len(srcs) >= 2:
+            a = _operand_value(srcs[0], st)
+            b = _operand_value(srcs[1], st)
+            j = lv.join(a, b)
+            if j.kind == lv.VARYING and not j.reason:
+                j = lv.varying("predicated select")
+            assign(j)
+            return
+        assign(lv.varying())
+        return
+
+    if base in ("IADD3", "IADD", "VIADD"):
         if has_carry_in:
             assign(lv.varying())
             return
