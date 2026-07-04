@@ -1,0 +1,508 @@
+
+64-bit ELF: type=ET_EXEC, ABI=8, sm=120a, toolkit=13.3, flags=0x9007802
+Sections:
+Index Offset   Size ES Align                      Type    Flags Link     Info Name
+    1     40    2df  0  1                       STRTAB        0    0        0 .shstrtab
+    2    343    1f5  0  1                       STRTAB        0    0        0 .strtab
+    3    538    138 18  8                       SYMTAB        0    2        d .symtab
+    4    670     68  0  1                     PROGBITS        0    0        0 .debug_frame
+    5    6d8     6c  0  1                     PROGBITS        0    0        0 .debug_line
+    6    744     4e  0  1                     PROGBITS        0    0        0 .nv_debug_line_sass
+    7    792    3b6  0  1                     PROGBITS        0    0        0 .nv_debug_ptx_txt
+    8    b48     b4  0  4                         NOTE  2000000    0        0 .note.nv.tkinfo
+    9    bfc     20  0  4                         NOTE  1000040    8        b .note.nv.cuinfo
+    a    c1c     24  0  4                    CUDA_INFO        0    3        0 .nv.info
+    b    c40     20  0  4             CUDA_COMPAT_INFO        0    0        0 .nv.compat
+    c    c60     88  0  4                    CUDA_INFO       40    3       11 .nv.info._Z5saxpyifPKfPf
+    d    ce8     20  8  4               CUDA_CALLGRAPH        0    3        0 .nv.callgraph
+    e    d08     18 18  8                         RELA       40    3        5 .rela.debug_line
+    f    d20     18 18  8                         RELA       40    3        6 .rela.nv_debug_line_sass
+   10    d38     18 18  8                         RELA       40    3        4 .rela.debug_frame
+   11    d80    200  0 80                     PROGBITS        6    3        b .text._Z5saxpyifPKfPf
+   12    f80     40  0  1                       NOBITS        3    0        0 .nv.shared.reserved.0
+   13    f80    398  0  4                     PROGBITS       42    0       11 .nv.constant0._Z5saxpyifPKfPf
+   14   1320    102  0 10                 CUDA_CAPMERC 10000000   1f        b .nv.capmerc.text._Z5saxpyifPKfPf
+   15   1422     70  0  1                     PROGBITS 10000000    0        0 .nv.merc.debug_frame
+   16   1492     77  0  1                     PROGBITS 10000000    0        0 .nv.merc.debug_line
+   17   1509     79  0  1                     PROGBITS 10000000    0        0 .nv.merc.nv_debug_line_sass
+   18    792    3b6  0  1                     PROGBITS 10000000    0        0 .nv.merc.nv_debug_ptx_txt
+   19   1584     24  0  4                    CUDA_INFO 10000000   1f        0 .nv.merc.nv.info
+   1a   15a8     9c  0  4                    CUDA_INFO 10000040   1f       14 .nv.merc.nv.info._Z5saxpyifPKfPf
+   1b   1648     18 18  8                         RELA 10000040   1f       16 .nv.merc.rela.debug_line
+   1c   1660     18 18  8                         RELA 10000040   1f       17 .nv.merc.rela.nv_debug_line_sass
+   1d   1678     18 18  8                         RELA 10000040   1f       15 .nv.merc.rela.debug_frame
+   1e   1690      0  0  1         CUDA_RESERVED_SHARED 10000003    0        0 .nv.merc.nv.shared.reserved.0
+   1f   1690    120 18  8                       SYMTAB 10000000    2        b .nv.merc.symtab
+
+.section .strtab
+
+.section .shstrtab
+
+.section .symtab
+ index           value           size      info    other  shndx    name  
+   0               0               0        0        0      0     (null)
+ 0x1               0               0      0x3        0    0x8     .note.nv.tkinfo
+ 0x2               0               0      0x3        0    0x9     .note.nv.cuinfo
+ 0x3               0               0      0x3        0   0x11     .text._Z5saxpyifPKfPf
+ 0x4            0x40             0x4     0x21        0      0     .nv.reservedSmem.offset0
+ 0x5            0x40               0     0x20     0xa0   0x12     __nv_reservedSMEM_offset_0_alias
+ 0x6               0               0      0x3        0    0x4     .debug_frame
+ 0x7               0               0      0x3        0    0x5     .debug_line
+ 0x8               0               0      0x3        0    0x6     .nv_debug_line_sass
+ 0x9               0               0      0x3        0    0x7     .nv_debug_ptx_txt
+ 0xa               0               0      0x3        0    0xd     .nv.callgraph
+ 0xb               0           0x200     0x12     0x10   0x11     _Z5saxpyifPKfPf
+ 0xc               0               0      0x3        0   0x13     .nv.constant0._Z5saxpyifPKfPf
+
+
+.nv.shared.reserved.0
+   No data to be dumped. 
+
+
+.nv.constant0._Z5saxpyifPKfPf
+0x00000000 0x00000000 0x00000000 0x00000000
+0x00000000 0x00000000 0x00000000 0x00000000
+0x00000000 0x00000000 0x00000000 0x00000000
+0x00000000 0x00000000 0x00000000 0x00000000
+0x00000000 0x00000000 0x00000000 0x00000000
+0x00000000 0x00000000 0x00000000 0x00000000
+0x00000000 0x00000000 0x00000000 0x00000000
+0x00000000 0x00000000 0x00000000 0x00000000
+0x00000000 0x00000000 0x00000000 0x00000000
+0x00000000 0x00000000 0x00000000 0x00000000
+0x00000000 0x00000000 0x00000000 0x00000000
+0x00000000 0x00000000 0x00000000 0x00000000
+0x00000000 0x00000000 0x00000000 0x00000000
+0x00000000 0x00000000 0x00000000 0x00000000
+0x00000000 0x00000000 0x00000000 0x00000000
+0x00000000 0x00000000 0x00000000 0x00000000
+0x00000000 0x00000000 0x00000000 0x00000000
+0x00000000 0x00000000 0x00000000 0x00000000
+0x00000000 0x00000000 0x00000000 0x00000000
+0x00000000 0x00000000 0x00000000 0x00000000
+0x00000000 0x00000000 0x00000000 0x00000000
+0x00000000 0x00000000 0x00000000 0x00000000
+0x00000000 0x00000000 0x00000000 0x00000000
+0x00000000 0x00000000 0x00000000 0x00000000
+0x00000000 0x00000000 0x00000000 0x00000000
+0x00000000 0x00000000 0x00000000 0x00000000
+0x00000000 0x00000000 0x00000000 0x00000000
+0x00000000 0x00000000 0x00000000 0x00000000
+0x00000000 0x00000000 0x00000000 0x00000000
+0x00000000 0x00000000 0x00000000 0x00000000
+0x00000000 0x00000000 0x00000000 0x00000000
+0x00000000 0x00000000 0x00000000 0x00000000
+0x00000000 0x00000000 0x00000000 0x00000000
+0x00000000 0x00000000 0x00000000 0x00000000
+0x00000000 0x00000000 0x00000000 0x00000000
+0x00000000 0x00000000 0x00000000 0x00000000
+0x00000000 0x00000000 0x00000000 0x00000000
+0x00000000 0x00000000 0x00000000 0x00000000
+0x00000000 0x00000000 0x00000000 0x00000000
+0x00000000 0x00000000 0x00000000 0x00000000
+0x00000000 0x00000000 0x00000000 0x00000000
+0x00000000 0x00000000 0x00000000 0x00000000
+0x00000000 0x00000000 0x00000000 0x00000000
+0x00000000 0x00000000 0x00000000 0x00000000
+0x00000000 0x00000000 0x00000000 0x00000000
+0x00000000 0x00000000 0x00000000 0x00000000
+0x00000000 0x00000000 0x00000000 0x00000000
+0x00000000 0x00000000 0x00000000 0x00000000
+0x00000000 0x00000000 0x00000000 0x00000000
+0x00000000 0x00000000 0x00000000 0x00000000
+0x00000000 0x00000000 0x00000000 0x00000000
+0x00000000 0x00000000 0x00000000 0x00000000
+0x00000000 0x00000000 0x00000000 0x00000000
+0x00000000 0x00000000 0x00000000 0x00000000
+0x00000000 0x00000000 0x00000000 0x00000000
+0x00000000 0x00000000 0x00000000 0x00000000
+0x00000000 0x00000000 0x00000000 0x00000000
+0x00000000 0x00000000 
+
+
+.section .note.nv.tkinfo
+Entry: 1
+  Owner                  Data size        Description
+  NVIDIA Corp            156              NVIDIA CUDA Toolkit Information
+	Note Version: 2
+	Tool Name: ptxas
+	Tool Version: Cuda compilation tools, release 13.3, V13.3.73
+	Tool Branch: Build cuda_13.3.r13.3/compiler.38244171_0
+	Tool Command Line Arguments: -v  -lineinfo  -arch sm_120a -m 64 
+
+
+.section .note.nv.cuinfo
+Entry: 1
+  Owner                  Data size        Description
+  NVIDIA Corp            8                NVIDIA CUDA Information
+	Note Version: 2
+	CUDA Virtual SM: sm_120
+	CUDA Tool Kit Version: 13.3
+
+
+.nv.info
+	<0x1>
+	Attribute:	EIATTR_REGCOUNT
+	Format:	EIFMT_SVAL
+	Value:	function: _Z5saxpyifPKfPf(0xb)	register count: 10
+	<0x2>
+	Attribute:	EIATTR_FRAME_SIZE
+	Format:	EIFMT_SVAL
+	Value:	function: _Z5saxpyifPKfPf(0xb)	frame size: 0x0
+	<0x3>
+	Attribute:	EIATTR_MIN_STACK_SIZE
+	Format:	EIFMT_SVAL
+	Value:	function: _Z5saxpyifPKfPf(0xb)	min stack size: 0x0
+
+
+.nv.compat
+	<0x1>
+	Attribute:	EICOMPAT_ATTR_CUDA_ACCELERATOR_TARGET
+	Format:	EIFMT_BVAL
+	Value:	0x1
+	<0x2>
+	Attribute:	EICOMPAT_ATTR_ISA_CLASS
+	Format:	EIFMT_BVAL
+	Value:	0x1
+	<0x3>
+	Attribute:	EICOMPAT_ATTR_MERCURY_ISA_MAJOR_MINOR_VERSION_V2
+	Format:	EIFMT_HVAL
+	Value:	1.1
+	<0x4>
+	Attribute:	EICOMPAT_ATTR_MERCURY_ISA_MAJOR_MINOR_VERSION_V1
+	Format:	EIFMT_HVAL
+	Value:	1.1
+	<0x5>
+	Attribute:	EICOMPAT_ATTR_INST_TENSORMAP_V1
+	Format:	EIFMT_BVAL
+	Value:	0x0
+	<0x6>
+	Attribute:	EICOMPAT_ATTR_CAN_FASTPATH_FINALIZE
+	Format:	EIFMT_SVAL
+	Value:	0x10 0x0 
+
+
+.nv.info._Z5saxpyifPKfPf
+	<0x1>
+	Attribute:	EIATTR_LANGUAGE
+	Format:	EIFMT_SVAL
+	Value:	Language:	 PTX
+
+	<0x2>
+	Attribute:	EIATTR_CUDA_API_VERSION
+	Format:	EIFMT_SVAL
+	Value:	0x85 
+	<0x3>
+	Attribute:	EIATTR_KPARAM_INFO
+	Format:	EIFMT_SVAL
+	Value:	Index : 0x0	Ordinal : 0x3	Offset  : 0x10	Size    : 0x8
+		Pointee's logAlignment : 0x0	Space : 0x5	cbank : 0x1f	Parameter Space : CBANK	
+	<0x4>
+	Attribute:	EIATTR_KPARAM_INFO
+	Format:	EIFMT_SVAL
+	Value:	Index : 0x0	Ordinal : 0x2	Offset  : 0x8	Size    : 0x8
+		Pointee's logAlignment : 0x0	Space : 0x5	cbank : 0x1f	Parameter Space : CBANK	
+	<0x5>
+	Attribute:	EIATTR_KPARAM_INFO
+	Format:	EIFMT_SVAL
+	Value:	Index : 0x0	Ordinal : 0x1	Offset  : 0x4	Size    : 0x4
+		Pointee's logAlignment : 0x0	Space : 0x0	cbank : 0x1f	Parameter Space : CBANK	
+	<0x6>
+	Attribute:	EIATTR_KPARAM_INFO
+	Format:	EIFMT_SVAL
+	Value:	Index : 0x0	Ordinal : 0x0	Offset  : 0x0	Size    : 0x4
+		Pointee's logAlignment : 0x0	Space : 0x0	cbank : 0x1f	Parameter Space : CBANK	
+	<0x7>
+	Attribute:	EIATTR_SPARSE_MMA_MASK
+	Format:	EIFMT_HVAL
+	Value:	0x0
+	<0x8>
+	Attribute:	EIATTR_MAXREG_COUNT
+	Format:	EIFMT_HVAL
+	Value:	0xff
+	<0x9>
+	Attribute:	EIATTR_MERCURY_ISA_VERSION
+	Format:	EIFMT_HVAL
+	Value:	1.1
+	<0x10>
+	Attribute:	EIATTR_VRC_CTA_INIT_COUNT
+	Format:	EIFMT_BVAL
+	Value:	0x0
+	<0x11>
+	Attribute:	EIATTR_EXIT_INSTR_OFFSETS
+	Format:	EIFMT_SVAL
+	Value:	0x70 0x120 
+	<0x12>
+	Attribute:	EIATTR_CBANK_PARAM_SIZE
+	Format:	EIFMT_HVAL
+	Value:	0x18
+	<0x13>
+	Attribute:	EIATTR_PARAM_CBANK
+	Format:	EIFMT_SVAL
+	Value:	0xc 0x180380 
+	<0x14>
+	Attribute:	EIATTR_SW_WAR
+	Format:	EIFMT_SVAL
+	Value:	0x0 
+	<0x15>
+	Attribute:	EIATTR_NVSAL_SW_WAR
+	Format:	EIFMT_HVAL
+	Value:	 0x1
+
+
+.nv.callgraph
+ <0,-1>
+ <0,-2>
+ <0,-3>
+ <0,-4>
+
+
+.text._Z5saxpyifPKfPf
+lmem=0	smem=0
+0xff017b82 0x0000df00 0x00000800 0x000fe200
+0x00007919 0x00000000 0x00002100 0x000e2e00
+0x000479c3 0x00000000 0x00002500 0x000e2200
+0xff0577ac 0x00007000 0x08000800 0x000e6e00
+0xff077b82 0x0000d800 0x00000800 0x000e2400
+0x07077c24 0x00000004 0x0f8e0200 0x001fca00
+0x07007c0c 0x00000005 0x0bf06270 0x002fda00
+0x0000094d 0x00000000 0x03800000 0x000fea00
+0xff027b82 0x0000e200 0x00000a00 0x000e2200
+0xff0477ac 0x00006b00 0x08000a00 0x000e6200
+0xff0677ac 0x00007080 0x08000800 0x000eac00
+0xff047b82 0x0000e400 0x00000a00 0x000ee200
+0x07027825 0x00000004 0x078e0202 0x001fcc00
+0x02027981 0x00000004 0x0c1e1900 0x002ea200
+0x07047825 0x00000004 0x078e0204 0x008fca00
+0x04077981 0x00000004 0x0c1e1900 0x000ea400
+0x02077c23 0x00000006 0x08000007 0x004fca00
+0x04007986 0x00000007 0x0c101904 0x000fe200
+0x0000794d 0x00000000 0x03800000 0x000fea00
+0x00fc7947 0xfffffffc 0x0383ffff 0x000fc000
+0x00007918 0x00000000 0x00000000 0x000fc000
+0x00007918 0x00000000 0x00000000 0x000fc000
+0x00007918 0x00000000 0x00000000 0x000fc000
+0x00007918 0x00000000 0x00000000 0x000fc000
+0x00007918 0x00000000 0x00000000 0x000fc000
+0x00007918 0x00000000 0x00000000 0x000fc000
+0x00007918 0x00000000 0x00000000 0x000fc000
+0x00007918 0x00000000 0x00000000 0x000fc000
+0x00007918 0x00000000 0x00000000 0x000fc000
+0x00007918 0x00000000 0x00000000 0x000fc000
+0x00007918 0x00000000 0x00000000 0x000fc000
+0x00007918 0x00000000 0x00000000 0x000fc000
+
+
+.section .debug_line
+  Offset:                         0
+  Length:                         104
+  DWARF Version:                   2
+  Prologue Length:                58
+  Minimum instruction length:      1
+  Initial value of is_stmt:        1
+  Line base:                       -5
+  Line range:                      14
+  Opcode base:                     10
+
+Opcodes:
+  Opcode 1 has 0 args
+  Opcode 2 has 1 args
+  Opcode 3 has 1 args
+  Opcode 4 has 1 args
+  Opcode 5 has 1 args
+  Opcode 6 has 0 args
+  Opcode 7 has 0 args
+  Opcode 8 has 0 args
+  Opcode 9 has 1 args
+
+The Directory Table:
+ /work/tests/fixtures/src
+
+The File Name Table:
+ Entry   Dir         Time    Size     Name
+     1     1   1783195392     235     saxpy.cu
+
+Line Number Statements:
+  Extended opcode 2: set Address to 0x0
+  Set File Name to entry 1 in the File Name Table
+  Advance Line by 1 to 2
+  Copy
+  Special opcode 230: advance Address by 16 to 0x10 and Line by 1 to 3
+  Advance Line by 1 to 4
+  Advance PC by 32 to 0x30
+  Copy
+  Special opcode 228: advance Address by 16 to 0x40 and Line by -1 to 3
+  Advance Line by 1 to 4
+  Advance PC by 32 to 0x60
+  Copy
+  Advance Line by 1 to 5
+  Advance PC by 192 to 0x120
+  Copy
+  Advance PC by 224 to 0x200
+  Extended opcode 1: End of Sequence
+
+
+
+.section .rela.debug_line	RELA
+0x47    _Z5saxpyifPKfPf    R_CUDA_64    0x0
+
+.section .nv_debug_line_sass
+  Offset:                         0
+  Length:                         74
+  DWARF Version:                   2
+  Prologue Length:                16
+  Minimum instruction length:      1
+  Initial value of is_stmt:        1
+  Line base:                       -5
+  Line range:                      14
+  Opcode base:                     10
+
+Opcodes:
+  Opcode 1 has 0 args
+  Opcode 2 has 1 args
+  Opcode 3 has 1 args
+  Opcode 4 has 1 args
+  Opcode 5 has 1 args
+  Opcode 6 has 0 args
+  Opcode 7 has 0 args
+  Opcode 8 has 0 args
+  Opcode 9 has 1 args
+
+The Directory Table:
+
+The File Name Table:
+ Entry   Dir         Time    Size     Name
+
+Line Number Statements:
+  Extended opcode 2: set Address to 0x0
+  Set File Name to entry 0 in the File Name Table
+  Advance Line by 20 to 21
+  Copy
+  Advance Line by 13 to 34
+  Advance PC by 16 to 0x10
+  Copy
+  Special opcode 227: advance Address by 16 to 0x20 and Line by -2 to 32
+  Special opcode 234: advance Address by 16 to 0x30 and Line by 5 to 37
+  Special opcode 225: advance Address by 16 to 0x40 and Line by -4 to 33
+  Special opcode 231: advance Address by 16 to 0x50 and Line by 2 to 35
+  Special opcode 231: advance Address by 16 to 0x60 and Line by 2 to 37
+  Special opcode 230: advance Address by 16 to 0x70 and Line by 1 to 38
+  Special opcode 235: advance Address by 16 to 0x80 and Line by 6 to 44
+  Advance Line by -23 to 21
+  Advance PC by 16 to 0x90
+  Copy
+  Advance Line by 27 to 48
+  Advance PC by 16 to 0xa0
+  Copy
+  Special opcode 227: advance Address by 16 to 0xb0 and Line by -2 to 46
+  Special opcode 227: advance Address by 16 to 0xc0 and Line by -2 to 44
+  Special opcode 230: advance Address by 16 to 0xd0 and Line by 1 to 45
+  Special opcode 230: advance Address by 16 to 0xe0 and Line by 1 to 46
+  Special opcode 230: advance Address by 16 to 0xf0 and Line by 1 to 47
+  Special opcode 230: advance Address by 16 to 0x100 and Line by 1 to 48
+  Special opcode 230: advance Address by 16 to 0x110 and Line by 1 to 49
+  Special opcode 232: advance Address by 16 to 0x120 and Line by 3 to 52
+  Advance PC by 224 to 0x200
+  Extended opcode 1: End of Sequence
+
+
+
+.section .rela.nv_debug_line_sass	RELA
+0x1d    _Z5saxpyifPKfPf    R_CUDA_64    0x0
+
+.section .nv_debug_ptx_txt
+
+
+
+
+
+
+
+
+.version 9.3
+.target sm_120a
+.address_size 64
+
+
+
+.visible .entry _Z5saxpyifPKfPf(
+.param .u32 _Z5saxpyifPKfPf_param_0,
+.param .f32 _Z5saxpyifPKfPf_param_1,
+.param .u64 .ptr .align 1 _Z5saxpyifPKfPf_param_2,
+.param .u64 .ptr .align 1 _Z5saxpyifPKfPf_param_3
+)
+{
+.reg .pred 	%p<2>;
+.reg .b32 	%r<10>;
+.reg .b64 	%rd<8>;
+
+
+ld.param.b32 	%r3, [_Z5saxpyifPKfPf_param_0];
+ld.param.b32 	%r2, [_Z5saxpyifPKfPf_param_1];
+ld.param.b64 	%rd1, [_Z5saxpyifPKfPf_param_2];
+ld.param.b64 	%rd2, [_Z5saxpyifPKfPf_param_3];
+
+mov.u32 	%r4, %ctaid.x;
+mov.u32 	%r5, %ntid.x;
+mov.u32 	%r6, %tid.x;
+mad.lo.s32 	%r1, %r4, %r5, %r6;
+
+setp.ge.s32 	%p1, %r1, %r3;
+@%p1 bra 	$L__BB0_2;
+
+cvta.to.global.u64 	%rd3, %rd1;
+cvta.to.global.u64 	%rd4, %rd2;
+
+mul.wide.s32 	%rd5, %r1, 4;
+add.s64 	%rd6, %rd3, %rd5;
+ld.global.b32 	%r7, [%rd6];
+add.s64 	%rd7, %rd4, %rd5;
+ld.global.b32 	%r8, [%rd7];
+fma.rn.f32 	%r9, %r2, %r7, %r8;
+st.global.b32 	[%rd7], %r9;
+$L__BB0_2:
+
+ret;
+
+}
+
+.section .debug_frame
+decodeDebugFrame, frameBuf 0xffffffff, total_length 104
+CIE length 36, cie_id -1
+version 3
+augmentation slen 1
+augmentation 
+code_align_factor slen 1
+data_align_factor slen 1
+ Debug Frame Common Information Entry
+  length:                 36
+  CIE_id :                -1
+  version:                3
+  augmentation:           
+  code align factor:      4
+  data align factor:      -4
+  return address register 0xffffffff
+  initial instructions: 19 bytes, ptr = 0x8080810c, frameBuf = 0xffffffff
+  DW_CFA_def_cfa register R1, offset 0
+  DW_CFA_same_value R255
+  DW_CFA_same_value R1
+  DW_CFA_nop
+  DW_CFA_nop
+  DW_CFA_nop
+ Debug Frame Description Entry
+  length:                 44
+  CIE_pointer:            0
+  initial_location:       0x0
+  address_range:          0x200
+  function:               _Z5saxpyifPKfPf
+  instructions: 20 bytes
+  DW_CFA_advance_loc4 delta 32
+  DW_CFA_def_cfa register R1, offset 0
+  DW_CFA_advance_loc4 delta 40
+  DW_CFA_nop
+  DW_CFA_nop
+  DW_CFA_nop
+  DW_CFA_nop
+
+.section .rela.debug_frame	RELA
+0x44    _Z5saxpyifPKfPf    R_CUDA_64    0x0

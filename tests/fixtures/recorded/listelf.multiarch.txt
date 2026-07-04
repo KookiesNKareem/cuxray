@@ -1,0 +1,2 @@
+ELF file    1: launch_bounds.sm_90.cubin
+ELF file    2: launch_bounds.sm_120a.cubin

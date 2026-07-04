@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: unit tests (recorded fixtures, no toolchain)
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: pip install -e ".[dev]"
+      - run: pytest -q
+
+  e2e:
+    name: e2e (auto-fetched toolchain, CUDA ${{ matrix.redist }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        redist: ["13.3.1", "12.9.1"]
+    env:
+      CUXRAY_REDIST_VERSION: ${{ matrix.redist }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev]"
+      - name: cache toolchain
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/cuxray
+          key: toolchain-${{ matrix.redist }}-linux-x86_64
+      - name: report on committed fixture cubins (exercises fetcher + parsers)
+        run: |
+          cuxray ls tests/fixtures/bin/spill.sm_120a.cubin
+          cuxray report tests/fixtures/bin/spill.sm_120a.cubin --threads 256 --json > /tmp/spill.json
+          python -c "
+          import json
+          d = json.load(open('/tmp/spill.json'))
+          k = d['units'][0]['kernels'][0]
+          assert k['resources']['regs'] == 32, k['resources']
+          assert k['spills']['store_bytes'] == 548, k['spills']
+          assert k['occupancy']['limiter'] == 'warps'
+          print('e2e assertions OK')
+          "
+      - name: diff + gate exit codes
+        run: |
+          cuxray gate tests/fixtures/bin/saxpy.sm_120a.cubin "spill_instrs==0, regs<=16"
+          if cuxray gate tests/fixtures/bin/spill.sm_120a.cubin "spill_instrs==0"; then
+            echo "gate should have failed" && exit 1
+          fi
+          cuxray diff tests/fixtures/bin/spill.sm_120a.cubin tests/fixtures/bin/spill.sm_120a.cubin --json | python -c "
+          import json, sys
+          d = json.load(sys.stdin)
+          assert d['changed'] == 0, d
+          print('self-diff clean')
+          "

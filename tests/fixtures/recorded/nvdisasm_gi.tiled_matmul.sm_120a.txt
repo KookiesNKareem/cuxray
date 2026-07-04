@@ -1,0 +1,194 @@
+	.target	sm_120a
+
+	.elftype	@"ET_EXEC"
+
+
+//--------------------- .text._Z12tiled_matmulPKfS0_Pfi --------------------------
+	.section	.text._Z12tiled_matmulPKfS0_Pfi,"ax",@progbits
+	.align	128
+        .global         _Z12tiled_matmulPKfS0_Pfi
+        .type           _Z12tiled_matmulPKfS0_Pfi,@function
+        .size           _Z12tiled_matmulPKfS0_Pfi,(.L_x_3 - _Z12tiled_matmulPKfS0_Pfi)
+        .other          _Z12tiled_matmulPKfS0_Pfi,@"STO_CUDA_ENTRY STV_DEFAULT"
+_Z12tiled_matmulPKfS0_Pfi:
+.text._Z12tiled_matmulPKfS0_Pfi:
+	//## File "/work/tests/fixtures/src/tiled_matmul.cu", line 5
+        /*0000*/                   LDC R1, c[0x0][0x37c] ;
+	//## File "/work/tests/fixtures/src/tiled_matmul.cu", line 9
+        /*0010*/                   S2R R21, SR_CTAID.Y ;
+	//## File "/work/tests/fixtures/src/tiled_matmul.cu", line 13
+        /*0020*/                   LDC R3, c[0x0][0x398] ;
+        /*0030*/                   LDCU.64 UR8, c[0x0][0x358] ;
+        /*0040*/                   HFMA2 R17, -RZ, RZ, 0, 0 ;
+	//## File "/work/tests/fixtures/src/tiled_matmul.cu", line 9
+        /*0050*/                   S2R R8, SR_TID.Y ;
+	//## File "/work/tests/fixtures/src/tiled_matmul.cu", line 10
+        /*0060*/                   S2R R5, SR_CTAID.X ;
+        /*0070*/                   S2R R10, SR_TID.X ;
+	//## File "/work/tests/fixtures/src/tiled_matmul.cu", line 13
+        /*0080*/                   ISETP.GE.AND P1, PT, R3, 0x20, PT ;
+	//## File "/work/tests/fixtures/src/tiled_matmul.cu", line 9
+        /*0090*/                   LEA R21, R21, R8, 0x5 ;
+	//## File "/work/tests/fixtures/src/tiled_matmul.cu", line 10
+        /*00a0*/                   LEA R22, R5, R10, 0x5 ;
+	//## File "/work/tests/fixtures/src/tiled_matmul.cu", line 22
+        /*00b0*/                   VIMNMX.S32 R0, R21, R22, !PT ;
+        /*00c0*/                   ISETP.GE.AND P0, PT, R0, R3, PT ;
+	//## File "/work/tests/fixtures/src/tiled_matmul.cu", line 13
+        /*00d0*/              @!P1 BRA `(.L_x_0) ;
+        /*00e0*/                   S2UR UR6, SR_CgaCtaId ;
+        /*00f0*/                   UMOV UR4, 0x400 ;
+        /*0100*/                   SHF.R.S32.HI R0, RZ, 0x1f, R3 ;
+        /*0110*/                   UIADD3 UR5, UPT, UPT, UR4, 0x1000, URZ ;
+	//## File "/work/tests/fixtures/src/tiled_matmul.cu", line 17
+        /*0120*/                   IMAD R2, R8, R3.reuse, R10 ;
+	//## File "/work/tests/fixtures/src/tiled_matmul.cu", line 9
+        /*0130*/                   MOV R17, RZ ;
+	//## File "/work/tests/fixtures/src/tiled_matmul.cu", line 13
+        /*0140*/                   LEA.HI R0, R0, R3.reuse, RZ, 0x5 ;
+	//## File "/work/tests/fixtures/src/tiled_matmul.cu", line 14
+        /*0150*/                   LDC.64 R26, c[0x0][0x380] ;
+	//## File "/work/tests/fixtures/src/tiled_matmul.cu", line 17
+        /*0160*/                   LEA R2, R5, R2, 0x5 ;
+	//## File "/work/tests/fixtures/src/tiled_matmul.cu", line 13
+        /*0170*/                   SHF.R.S32.HI R4, RZ, 0x5, R0 ;
+	//## File "/work/tests/fixtures/src/tiled_matmul.cu", line 17
+        /*0180*/                   IMAD R0, R21, R3, R10 ;
+	//## File "/work/tests/fixtures/src/tiled_matmul.cu", line 14
+        /*0190*/                   LDC.64 R24, c[0x0][0x388] ;
+	//## File "/work/tests/fixtures/src/tiled_matmul.cu", line 9
+        /*01a0*/                   IADD R4, -R4, RZ ;
+        /*01b0*/                   ULEA UR4, UR6, UR4, 0x18 ;
+        /*01c0*/                   ULEA UR5, UR6, UR5, 0x18 ;
+        /*01d0*/                   LEA R20, R8, UR4, 0x7 ;
+        /*01e0*/                   LEA R6, R10.reuse, UR5, 0x2 ;
+        /*01f0*/                   LEA R7, R10, R20, 0x2 ;
+        /*0200*/                   LEA R5, R8, R6, 0x7 ;
+.L_x_1:
+	//## File "/work/tests/fixtures/src/tiled_matmul.cu", line 14
+        /*0210*/                   IMAD.WIDE.U32 R12, R0, 0x4, R26 ;
+	//## File "/work/tests/fixtures/src/tiled_matmul.cu", line 15
+        /*0220*/                   IMAD.WIDE.U32 R18, R2, 0x4, R24 ;
+	//## File "/work/tests/fixtures/src/tiled_matmul.cu", line 14
+        /*0230*/                   LDG.E R16, desc[UR8][R12.64] ;
+	//## File "/work/tests/fixtures/src/tiled_matmul.cu", line 15
+        /*0240*/                   LDG.E R18, desc[UR8][R18.64] ;
+	//## File "/work/tests/fixtures/src/tiled_matmul.cu", line 13
+        /*0250*/                   IADD R4, R4, 0x1 ;
+        /*0260*/                   IADD R0, R0, 0x20 ;
+        /*0270*/                   LEA R2, R3, R2, 0x5 ;
+        /*0280*/                   ISETP.NE.U32.AND P1, PT, R4, RZ, PT ;
+	//## File "/work/tests/fixtures/src/tiled_matmul.cu", line 14
+        /*0290*/                   STS [R7], R16 ;
+	//## File "/work/tests/fixtures/src/tiled_matmul.cu", line 15
+        /*02a0*/                   STS [R5], R18 ;
+	//## File "/work/tests/fixtures/src/tiled_matmul.cu", line 16
+        /*02b0*/                   BAR.SYNC.DEFER_BLOCKING 0x0 ;
+	//## File "/work/tests/fixtures/src/tiled_matmul.cu", line 18
+        /*02c0*/                   LDS R28, [R6] ;
+        /*02d0*/                   LDS.128 R8, [R20] ;
+        /*02e0*/                   LDS R31, [R6+0x80] ;
+        /*02f0*/                   LDS R23, [R6+0x100] ;
+        /*0300*/                   LDS R32, [R6+0x180] ;
+        /*0310*/                   LDS R33, [R6+0x200] ;
+        /*0320*/                   LDS.128 R12, [R20+0x10] ;
+        /*0330*/                   LDS R30, [R6+0x280] ;
+        /*0340*/                   LDS R29, [R6+0x300] ;
+        /*0350*/                   LDS R34, [R6+0x480] ;
+        /*0360*/                   LDS R35, [R6+0x600] ;
+        /*0370*/                   FFMA R8, R8, R28, R17 ;
+        /*0380*/                   LDS R28, [R6+0x380] ;
+        /*0390*/                   FFMA R8, R31, R9, R8 ;
+        /*03a0*/                   LDS R31, [R6+0x400] ;
+        /*03b0*/                   FFMA R23, R23, R10, R8 ;
+        /*03c0*/                   LDS.128 R16, [R20+0x20] ;
+        /*03d0*/                   FFMA R11, R32, R11, R23 ;
+        /*03e0*/                   LDS R23, [R6+0x500] ;
+        /*03f0*/                   LDS R32, [R6+0x580] ;
+        /*0400*/                   FFMA R11, R12, R33, R11 ;
+        /*0410*/                   LDS R33, [R6+0x800] ;
+        /*0420*/                   FFMA R12, R30, R13, R11 ;
+        /*0430*/                   LDS.128 R8, [R20+0x30] ;
+        /*0440*/                   FFMA R29, R29, R14, R12 ;
+        /*0450*/                   LDS R30, [R6+0x680] ;
+        /*0460*/                   FFMA R15, R28, R15, R29 ;
+        /*0470*/                   LDS R29, [R6+0x700] ;
+        /*0480*/                   LDS R28, [R6+0x780] ;
+        /*0490*/                   FFMA R15, R16, R31, R15 ;
+        /*04a0*/                   LDS R31, [R6+0x900] ;
+        /*04b0*/                   FFMA R34, R34, R17, R15 ;
+        /*04c0*/                   LDS.128 R12, [R20+0x40] ;
+        /*04d0*/                   FFMA R23, R23, R18, R34 ;
+        /*04e0*/                   LDS R34, [R6+0x880] ;
+        /*04f0*/                   FFMA R19, R32, R19, R23 ;
+        /*0500*/                   LDS R32, [R6+0x980] ;
+        /*0510*/                   FFMA R19, R8, R35, R19 ;
+        /*0520*/                   LDS R35, [R6+0xa00] ;
+        /*0530*/                   FFMA R8, R30, R9, R19 ;
+        /*0540*/                   LDS.128 R16, [R20+0x50] ;
+        /*0550*/                   LDS R30, [R6+0xa80] ;
+        /*0560*/                   LDS R23, [R6+0xb00] ;
+        /*0570*/                   FFMA R29, R29, R10, R8 ;
+        /*0580*/                   FFMA R11, R28, R11, R29 ;
+        /*0590*/                   LDS R28, [R6+0xb80] ;
+        /*05a0*/                   LDS R29, [R6+0xc00] ;
+        /*05b0*/                   FFMA R11, R12, R33, R11 ;
+        /*05c0*/                   FFMA R34, R34, R13, R11 ;
+        /*05d0*/                   LDS.128 R8, [R20+0x60] ;
+        /*05e0*/                   FFMA R31, R31, R14, R34 ;
+        /*05f0*/                   LDS R34, [R6+0xc80] ;
+        /*0600*/                   FFMA R15, R32, R15, R31 ;
+        /*0610*/                   LDS R31, [R6+0xd00] ;
+        /*0620*/                   FFMA R15, R16, R35, R15 ;
+        /*0630*/                   LDS R16, [R6+0xd80] ;
+        /*0640*/                   FFMA R30, R30, R17, R15 ;
+        /*0650*/                   LDS R17, [R6+0xe00] ;
+        /*0660*/                   FFMA R33, R23, R18, R30 ;
+        /*0670*/                   LDS.128 R12, [R20+0x70] ;
+        /*0680*/                   LDS R30, [R6+0xe80] ;
+        /*0690*/                   LDS R23, [R6+0xf00] ;
+        /*06a0*/                   FFMA R19, R28, R19, R33 ;
+        /*06b0*/                   LDS R18, [R6+0xf80] ;
+        /*06c0*/                   FFMA R19, R8, R29, R19 ;
+        /*06d0*/                   FFMA R34, R34, R9, R19 ;
+        /*06e0*/                   FFMA R31, R31, R10, R34 ;
+        /*06f0*/                   FFMA R11, R16, R11, R31 ;
+        /*0700*/                   FFMA R11, R12, R17, R11 ;
+        /*0710*/                   FFMA R30, R30, R13, R11 ;
+        /*0720*/                   FFMA R23, R23, R14, R30 ;
+        /*0730*/                   FFMA R17, R18, R15, R23 ;
+	//## File "/work/tests/fixtures/src/tiled_matmul.cu", line 20
+        /*0740*/                   BAR.SYNC.DEFER_BLOCKING 0x0 ;
+	//## File "/work/tests/fixtures/src/tiled_matmul.cu", line 13
+        /*0750*/               @P1 BRA `(.L_x_1) ;
+.L_x_0:
+	//## File "/work/tests/fixtures/src/tiled_matmul.cu", line 22
+        /*0760*/               @P0 EXIT ;
+        /*0770*/                   LDC.64 R4, c[0x0][0x390] ;
+        /*0780*/                   IMAD R3, R21, R3, R22 ;
+        /*0790*/                   IMAD.WIDE R2, R3, 0x4, R4 ;
+        /*07a0*/                   STG.E desc[UR8][R2.64], R17 ;
+	//## File "/work/tests/fixtures/src/tiled_matmul.cu", line 23
+        /*07b0*/                   EXIT ;
+.L_x_2:
+        /*07c0*/                   BRA `(.L_x_2);
+        /*07d0*/                   NOP;
+        /*07e0*/                   NOP;
+        /*07f0*/                   NOP;
+        /*0800*/                   NOP;
+        /*0810*/                   NOP;
+        /*0820*/                   NOP;
+        /*0830*/                   NOP;
+        /*0840*/                   NOP;
+        /*0850*/                   NOP;
+        /*0860*/                   NOP;
+        /*0870*/                   NOP;
+.L_x_3:
+
+
+//--------------------- SYMBOLS --------------------------
+
+	.type		.nv.reservedSmem.offset0,@object
+	.size		.nv.reservedSmem.offset0,0x4
+	.type		.nv.reservedSmem.cap,@object
+	.size		.nv.reservedSmem.cap,0x4

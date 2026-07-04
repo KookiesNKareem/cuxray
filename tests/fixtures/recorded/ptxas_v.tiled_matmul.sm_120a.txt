@@ -1,0 +1,6 @@
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function '_Z12tiled_matmulPKfS0_Pfi' for 'sm_120a'
+ptxas info    : Function properties for _Z12tiled_matmulPKfS0_Pfi
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 38 registers, used 1 barriers, 8192 bytes smem
+ptxas info    : Compile time = 16.238 ms
