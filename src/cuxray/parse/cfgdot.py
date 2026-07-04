@@ -82,11 +82,15 @@ def _loop_depths(cfg: FunctionCFG) -> dict[str, int]:
             color[node] = 2
             stack.pop()
 
-    depth = {n: 0 for n in cfg.nodes}
+    # A loop may have several back edges to the same header (multiple
+    # `continue` paths); union their natural loops so each header counts
+    # once toward nesting depth. (Found by the production invariant sweep:
+    # per-back-edge counting gave StreamK/persistent kernels depth 10-12.)
+    by_header: dict[str, set[str]] = {}
     for tail, header in back_edges:
-        # Natural loop: header + everything reaching tail without passing header
-        members = {header, tail}
+        members = by_header.setdefault(header, {header})
         work = [tail]
+        members.add(tail)
         while work:
             n = work.pop()
             if n == header:
@@ -95,6 +99,8 @@ def _loop_depths(cfg: FunctionCFG) -> dict[str, int]:
                 if p not in members:
                     members.add(p)
                     work.append(p)
+    depth = {n: 0 for n in cfg.nodes}
+    for members in by_header.values():
         for n in members:
             depth[n] += 1
     return depth

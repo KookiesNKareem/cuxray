@@ -100,3 +100,22 @@ class TestCfg:
         cfg = cfgdot.parse(rec("nvdisasm_cfg.tiled_matmul.sm_120a.dot"))
         f = list(cfg.values())[0]
         assert max(f.loop_depth.values(), default=0) >= 1
+
+    def test_multiple_back_edges_same_header_count_once(self):
+        # Two `continue` paths to one loop header must give depth 1, not 2.
+        # (Found by the production invariant sweep on StreamK/FA3 kernels.)
+        dot = '''digraph f {
+subgraph "cluster_k" {
+"k" [label="{...}"];
+"k":exit0:e -> ".L_A":entry:n [style=solid];
+".L_A":exit0:e -> ".L_B":entry:n [style=solid];
+".L_B":exit0:e -> ".L_A":entry:n [style=solid];
+".L_A":exit1:e -> ".L_A":entry:n [style=solid];
+".L_B":exit1:e -> ".L_X":entry:n [style=solid];
+}
+}'''
+        cfg = cfgdot.parse(dot)
+        d = cfg["k"].loop_depth
+        assert d[".L_A"] == 1, d
+        assert d[".L_B"] == 1, d
+        assert d[".L_X"] == 0, d
