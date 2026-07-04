@@ -66,6 +66,7 @@ def analyze_unit(
     kernel_re: Optional[str] = None,
     level: str = "full",
     fast: bool = False,
+    smem_dynamic: Optional[int] = None,
 ) -> dict:
     cubin = str(unit.cubin)
     data = unit.cubin.read_bytes()
@@ -156,9 +157,18 @@ def analyze_unit(
                     f"REG={r.reg if r else '?'} is the post-reallocation maximum, "
                     "not the launch allocation; occupancy from it is pessimistic"
                 )
+            if (smem_dynamic is None and smem_static == 0
+                    and sass.uses_shared_memory(func)):
+                notes.append(
+                    "kernel uses shared memory but none is statically allocated "
+                    "— dynamic smem of unknown launch-time size; occupancy "
+                    "assumes 0 B, pass --smem-dynamic N for the real number"
+                )
 
         if spec and threads and r and r.reg is not None:
-            occ = compute(spec, r.reg, threads, smem_static=smem_static)
+            occ = compute(spec, r.reg, threads, smem_static=smem_static,
+                          smem_dynamic=smem_dynamic or 0,
+                          carveout_kb=carveout_kb)
             d = occ.to_dict()
             d["cliffs"] = find_cliffs(spec, occ)
             d["register_reallocation"] = realloc
@@ -183,6 +193,7 @@ def build_report(
     arch: Optional[str] = None,
     level: str = "full",
     fast: bool = False,
+    smem_dynamic: Optional[int] = None,
 ) -> dict:
     import tempfile
 
@@ -207,7 +218,8 @@ def build_report(
             "toolchain": tc.describe(),
             "units": [
                 analyze_unit(u, tc, threads=threads, carveout_kb=carveout_kb,
-                             kernel_re=kernel_re, level=level, fast=fast)
+                             kernel_re=kernel_re, level=level, fast=fast,
+                             smem_dynamic=smem_dynamic)
                 for u in units
             ],
         }

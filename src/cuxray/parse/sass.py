@@ -158,6 +158,18 @@ def is_spill(instr: Instruction) -> bool:
     return op in _SPILL_OPS
 
 
+_SMEM_PREFIXES = ("LDS", "STS", "LDGSTS", "UTMA")  # LDS covers LDSM, STS covers STSM
+
+
+def uses_shared_memory(func: Function) -> bool:
+    """True if the kernel touches shared memory at all (loads/stores/matrix
+    loads/async copies/TMA into smem). Used to flag kernels that allocate
+    shared memory *dynamically*: they access smem while the binary records no
+    static allocation — the size is a host-side launch parameter no static
+    tool can recover."""
+    return any(i.opcode.startswith(_SMEM_PREFIXES) for i in func.instructions)
+
+
 def uses_register_reallocation(func: Function) -> bool:
     """True if the kernel redistributes registers between warpgroups at
     runtime (PTX setmaxnreg → SASS USETMAXREG on sm_90+). For such kernels

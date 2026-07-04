@@ -119,3 +119,12 @@ def test_register_reallocation_detection():
         Instruction(addr=16, opcode="FFMA", operands=""),
     ])
     assert uses_register_reallocation(ws)
+
+
+def test_shared_memory_detection():
+    from cuxray.parse.sass import Function, Instruction, uses_shared_memory
+    none = Function(name="k", instructions=[Instruction(addr=0, opcode="LDG.E", operands="")])
+    assert not uses_shared_memory(none)
+    for op in ("LDS.64", "STS.128", "LDSM.16.M88.4", "LDGSTS.E.BYPASS.128", "UTMALDG.2D"):
+        f = Function(name="k", instructions=[Instruction(addr=0, opcode=op, operands="")])
+        assert uses_shared_memory(f), op

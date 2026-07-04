@@ -61,8 +61,12 @@ spill.sm_120a.cubin  sm_120a
   depth from the control-flow graph. Spill *bytes* are computed from SASS
   access widths and reproduce `ptxas -v`'s byte counts exactly (pinned by a
   test), so they work on binaries you didn't compile.
-- **Occupancy** — a faithful port of NVIDIA's `cuda_occupancy.h` algorithm:
-  blocks/SM, the binding limiter, and cliff detection.
+- **Occupancy** — a faithful port of NVIDIA's `cuda_occupancy.h` algorithm
+  (validated against it on 4,300+ configs, and against real hardware):
+  blocks/SM, the binding limiter(s), and cliff detection. Kernels that
+  allocate shared memory dynamically (CUTLASS, FlashAttention) take
+  `--smem-dynamic N` — that size is a launch parameter, not in the binary,
+  and cuxray warns when it's needed rather than reporting a wrong number.
 
 Compile with `-lineinfo` (free — debug metadata only, no codegen impact) to
 get source attribution; without it cuxray reports SASS addresses.
@@ -146,7 +150,8 @@ will do, and reading it is not a simulation.
 - Structural facts only: cache behavior, achieved bandwidth, and
   data-dependent divergence need a profiler. cuxray is the predict half of
   predict → measure → explain.
-- Block size is a runtime choice — pass `--threads` for occupancy analysis.
+- Block size and dynamic shared memory are runtime choices — pass `--threads`
+  and (when flagged) `--smem-dynamic` for occupancy analysis.
 - Kernel names are demangled via `c++filt` when available.
 - Linux only (NVIDIA publishes no macOS/Windows binary utilities; on a Mac,
   run cuxray in any Linux container — no GPU passthrough needed).

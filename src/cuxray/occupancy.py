@@ -146,12 +146,11 @@ def compute(
         "shared_memory": by_smem,
     }
     blocks = min(limits.values())
-    # Name the limiter; prefer the more actionable resource on ties.
-    limiter = "none"
-    for name in ("registers", "shared_memory", "warps", "blocks"):
-        if limits[name] == blocks:
-            limiter = name
-            break
+    # Name ALL binding resources — on ties, relieving only one gains nothing,
+    # and saying so prevents wasted optimization effort.
+    binding = [name for name in ("registers", "shared_memory", "warps", "blocks")
+               if limits[name] == blocks]
+    limiter = "+".join(binding) if binding else "none"
     active_warps = blocks * warps_per_block
     max_warps = spec.max_warps_per_sm
     pct = 100.0 * active_warps / max_warps if max_warps else 0.0

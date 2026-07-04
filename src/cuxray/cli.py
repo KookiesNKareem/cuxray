@@ -62,11 +62,15 @@ def ls(path, as_json):
 @click.option("--kernel", "kernel_re", default=None, help="regex filter on kernel names")
 @click.option("--arch", default=None, help="architecture for .ptx input (e.g. sm_120a)")
 @click.option("--fast", is_flag=True, help="skip liveness analysis (no pressure curve)")
+@click.option("--smem-dynamic", "smem_dynamic", type=int, default=None,
+              help="dynamic shared memory bytes passed at launch (not recorded "
+                   "in the binary; applies to all matched kernels)")
 @click.option("--json", "as_json", is_flag=True, help="emit JSON")
-def report(path, threads, carveout, kernel_re, arch, fast, as_json):
+def report(path, threads, carveout, kernel_re, arch, fast, smem_dynamic, as_json):
     """Full static report: resources, pressure, spills, occupancy."""
     doc = _report_or_die(path, threads=threads, carveout_kb=carveout,
-                         kernel_re=kernel_re, arch=arch, fast=fast)
+                         kernel_re=kernel_re, arch=arch, fast=fast,
+                         smem_dynamic=smem_dynamic)
     if as_json:
         click.echo(json.dumps(doc, indent=2))
     else:
