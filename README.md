@@ -67,6 +67,35 @@ spill.sm_120a.cubin  sm_120a
   allocate shared memory dynamically (CUTLASS, FlashAttention) take
   `--smem-dynamic N` — that size is a launch parameter, not in the binary,
   and cuxray warns when it's needed rather than reporting a wrong number.
+- **Access patterns** — static shared-memory bank-conflict and global
+  coalescing analysis (see below).
+
+### Bank conflicts and coalescing, without running anything
+
+Give `--threads` a block shape (`256` or `32,8`) and cuxray traces how every
+shared/global access's address varies **across the 32 lanes of a warp**,
+directly from the SASS:
+
+```text
+  col_conflict(float const*, float*, int)
+    access issues: 224 conflicted shared · 0 uncoalesced global
+  location               issue                              count   loop depth
+  bank_conflict.cu:19    32-way bank conflict (stride 128 B)  224   1 🔥
+
+  xor_swizzle(float const*, float*, int)
+    access patterns clean (321 analyzed)
+```
+
+The analysis is exact where it answers: warp-uniform terms (loop counters,
+base pointers) cancel out of lane differences, and pure lane-index
+arithmetic — including the shift/AND/**XOR swizzles** CUTLASS uses — is
+evaluated bit-exactly, so swizzled layouts are *proven* clean rather than
+reported as unanalyzable. Anything data-dependent is reported as
+"can't analyze" with a reason, never guessed. Hardware check on the fixture
+patterns: the flagged 32-way kernel ran 12.3× slower than its padded twin;
+the swizzled kernel matched the clean one within 2%.
+
+Gate it in CI: `cuxray gate k.cubin "bank_ways<=2, uncoalesced==0" --threads 256`.
 
 Compile with `-lineinfo` (free — debug metadata only, no codegen impact) to
 get source attribution; without it cuxray reports SASS addresses.
@@ -158,11 +187,14 @@ will do, and reading it is not a simulation.
 
 ## Roadmap
 
-- **Layer B** — static shared-memory bank-conflict and global coalescing
-  analysis (affine + XOR-swizzle address reasoning, honest "can't analyze"
-  on data-dependent indices).
 - **Layer C** — control-bit/scheduling analysis: static stall estimates and
   critical-path cycles from the compiler's own embedded schedule.
+
+Access-analysis limitations (v0.2): LDSM/STSM matrix loads, TMA/async
+copies, and generic (space-unknown) LD/ST are listed as unanalyzed rather
+than modeled; the analysis models warp 0 (representative whenever
+blockDim.x is a multiple of 32, noted otherwise); data-dependent gathers
+are honestly "can't analyze".
 
 ## License
 
