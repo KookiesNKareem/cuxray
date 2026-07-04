@@ -124,3 +124,31 @@ class TestEndToEnd:
         bad = [a for a in res["accesses"] if a["verdict"] == "uncoalesced"]
         assert bad and all(a["sectors_worst"] == 32 for a in bad)
         assert all(a["efficiency_pct"] == 12.5 for a in bad)
+
+
+@pytest.mark.parametrize("arch", ["sm_90", "sm_120a"])
+class TestMatrixAndAsync:
+    def _run(self, arch):
+        dis = sass.parse_gi((REC / f"nvdisasm_gi.ldsm_async.{arch}.txt").read_text())
+        return {n: analyze_accesses(f, (32, 1, 1)) for n, f in dis.functions.items()}
+
+    def test_full_coverage(self, arch):
+        for name, res in self._run(arch).items():
+            assert res["unanalyzed_count"] == 0, (name, res["unanalyzed"][:2])
+
+    def test_ldsm_verdicts(self, arch):
+        results = self._run(arch)
+        for name, res in results.items():
+            ldsm = [a for a in res["accesses"] if a["opcode"].startswith("LDSM")]
+            assert ldsm
+            if "row_major" in name:
+                assert all(a["conflict_ways"] == 8 for a in ldsm), name
+            else:
+                assert all(a["conflict_ways"] == 1 for a in ldsm), name
+
+    def test_ldgsts_dual_analysis(self, arch):
+        for name, res in self._run(arch).items():
+            sides = {a["space"]: a["verdict"] for a in res["accesses"]
+                     if a["opcode"].startswith("LDGSTS")}
+            assert sides.get("global") == "coalesced", name
+            assert sides.get("shared") == "clean", name

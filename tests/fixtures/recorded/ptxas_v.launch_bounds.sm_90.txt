@@ -3,9 +3,9 @@ ptxas info    : Compiling entry function '_Z5plainPKfPfi' for 'sm_90'
 ptxas info    : Function properties for _Z5plainPKfPfi
     0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
 ptxas info    : Used 10 registers, used 0 barriers
-ptxas info    : Compile time = 11.596 ms
+ptxas info    : Compile time = 11.982 ms
 ptxas info    : Compiling entry function '_Z7boundedPKfPfi' for 'sm_90'
 ptxas info    : Function properties for _Z7boundedPKfPfi
     0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
 ptxas info    : Used 10 registers, used 0 barriers
-ptxas info    : Compile time = 2.042 ms
+ptxas info    : Compile time = 1.906 ms

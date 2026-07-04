@@ -1,0 +1,104 @@
+digraph f {
+subgraph "cluster__Z11ldsm_paddedPK5uint4Pji" {
+node [fontname="Courier",fontsize=10,shape=Mrecord];
+"_Z11ldsm_paddedPK5uint4Pji"
+[label="{<entry>	.global		_Z11ldsm_paddedPK5uint4Pji\l	.type		_Z11ldsm_paddedPK5uint4Pji,@function\l	.size		_Z11ldsm_paddedPK5uint4Pji,(.L_x_20\ -\ _Z11ldsm_paddedPK5uint4Pji)\l	.other		_Z11ldsm_paddedPK5uint4Pji,\<no\ object\>\l_Z11ldsm_paddedPK5uint4Pji:\l.text._Z11ldsm_paddedPK5uint4Pji:\l\ \ LDC\ R1,\ c\[0x0\]\[0x37c\]\ ;\l\ \ S2R\ R4,\ SR_CgaCtaId\ ;\l\ \ LDCU.64\ UR4,\ c\[0x0\]\[0x380\]\ ;\l\ \ MOV\ R3,\ 0x400\ ;\l\ \ MOV\ R9,\ RZ\ ;\l\ \ S2R\ R0,\ SR_TID.X\ ;\l\ \ LDCU.64\ UR6,\ c\[0x0\]\[0x358\]\ ;\l\ \ LEA\ R7,\ R4,\ R3,\ 0x18\ ;\l\ \ HFMA2\ R3,\ -RZ,\ RZ,\ 0,\ 0\ ;\l\ \ IMAD.SHL.U32\ R2,\ R0,\ 0x10,\ RZ\ ;\l\ \ IADD.64\ R4,\ R2,\ UR4\ ;\l\ \ IADD\ R3,\ R2,\ R7\ ;\l\ \ LDCU\ UR5,\ c\[0x0\]\[0x390\]\ ;\l\ \ @!PT\ LDS\ RZ,\ \[RZ\]\ ;\l\ \ @!PT\ LDS\ RZ,\ \[RZ\]\ ;\l\ \ @!PT\ LDS\ RZ,\ \[RZ\]\ ;\l\ \ LDGSTS.E.BYPASS.128\ \[R3\],\ desc\[UR6\]\[R4.64\]\ ;\l\ \ LDGDEPBAR\ ;\l\ \ UISETP.GE.AND\ UP0,\ UPT,\ UR5,\ 0x1,\ UPT\ ;\l\ \ DEPBAR.LE\ SB0,\ 0x0\ ;\l\ \ BAR.SYNC.DEFER_BLOCKING\ 0x0\ ;\l|<exit0>\ \ BRA.U\ !UP0,\ `(.L_x_0)\ ;\l|<exitpost0>\ \ UISETP.GE.U32.AND\ UP0,\ UPT,\ UR5,\ 0x4,\ UPT\ ;\l\ \ IMAD\ R2,\ R0,\ 0x90,\ R7\ ;\l\ \ MOV\ R9,\ RZ\ ;\l\ \ ULOP3.LUT\ UR4,\ UR5,\ 0x3,\ URZ,\ 0xc0,\ !UPT\ ;\l|<exit1>\ \ BRA.U\ !UP0,\ `(.L_x_1)\ ;\l|<exitpost1>\ \ ULOP3.LUT\ UR5,\ UR5,\ 0x7ffffffc,\ URZ,\ 0xc0,\ !UPT\ ;\l\ \ HFMA2\ R9,\ -RZ,\ RZ,\ 0,\ 0\ ;\l\ \ UPLOP3.LUT\ UP0,\ UPT,\ UPT,\ UPT,\ UPT,\ 0x80,\ 0x8\ ;\l\ \ UIADD3\ UR5,\ UPT,\ UPT,\ -UR5,\ URZ,\ URZ\ ;\l\ \ UISETP.GE.U32.AND\ UP1,\ UPT,\ UR5,\ URZ,\ UPT\ ;\l|<exit2>\ \ BRA.U\ !UP1,\ `(.L_x_2)\ ;\l|<exitpost2>\ \ LDSM.16.M88.4\ R4,\ \[R2\]\ ;\l\ \ UPLOP3.LUT\ UP0,\ UPT,\ UPT,\ UPT,\ UPT,\ 0x40,\ 0x4\ ;\l\ \ UIADD3\ UR5,\ UPT,\ UPT,\ UR5,\ 0x4,\ URZ\ ;\l\ \ LOP3.LUT\ R9,\ R4,\ R5,\ R9,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R7,\ R9,\ R6,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R4,\ R5,\ R9,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R7,\ R9,\ R6,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R4,\ R5,\ R9,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R7,\ R9,\ R6,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R4,\ R5,\ R9,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R7,\ R9,\ R6,\ 0x96,\ !PT\ ;\l}"]
+"_Z11ldsm_paddedPK5uint4Pji":exit0:e -> ".L_x_0":entry:n [style=solid];
+"_Z11ldsm_paddedPK5uint4Pji":exit1:e -> ".L_x_1":entry:n [style=solid];
+"_Z11ldsm_paddedPK5uint4Pji":exit2:e -> ".L_x_2":entry:n [style=solid];
+"_Z11ldsm_paddedPK5uint4Pji":exitpost2:s -> ".L_x_2":entry:n [style=solid];
+node [fontname="Courier",fontsize=10,shape=Mrecord];
+".L_x_2"
+[label="{<entry>.L_x_2:\l\ \ UIADD3\ UR8,\ UPT,\ UPT,\ -UR5,\ URZ,\ URZ\ ;\l\ \ UISETP.GT.AND\ UP1,\ UPT,\ UR8,\ 0xc,\ UPT\ ;\l|<exit0>\ \ BRA.U\ !UP1,\ `(.L_x_3)\ ;\l|<exitpost0>\ \ UPLOP3.LUT\ UP0,\ UPT,\ UPT,\ UPT,\ UPT,\ 0x40,\ 0x4\ ;\l}"]
+".L_x_2":exit0:e -> ".L_x_3":entry:n [style=solid];
+".L_x_2":exitpost0:s -> ".L_x_4":entry:n [style=solid];
+node [fontname="Courier",fontsize=10,shape=Mrecord];
+".L_x_4"
+[label="{<entry>.L_x_4:\l\ \ LDSM.16.M88.4\ R4,\ \[R2\]\ ;\l\ \ UIADD3\ UR5,\ UPT,\ UPT,\ UR5,\ 0x10,\ URZ\ ;\l\ \ UISETP.GE.AND\ UP1,\ UPT,\ UR5,\ -0xc,\ UPT\ ;\l\ \ LOP3.LUT\ R9,\ R4,\ R5,\ R9,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R7,\ R9,\ R6,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R4,\ R5,\ R9,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R7,\ R9,\ R6,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R4,\ R5,\ R9,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R7,\ R9,\ R6,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R4,\ R5,\ R9,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R7,\ R9,\ R6,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R4,\ R5,\ R9,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R7,\ R9,\ R6,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R4,\ R5,\ R9,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R7,\ R9,\ R6,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R4,\ R5,\ R9,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R7,\ R9,\ R6,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R4,\ R5,\ R9,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R7,\ R9,\ R6,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R4,\ R5,\ R9,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R7,\ R9,\ R6,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R4,\ R5,\ R9,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R7,\ R9,\ R6,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R4,\ R5,\ R9,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R7,\ R9,\ R6,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R4,\ R5,\ R9,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R7,\ R9,\ R6,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R4,\ R5,\ R9,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R7,\ R9,\ R6,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R4,\ R5,\ R9,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R7,\ R9,\ R6,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R4,\ R5,\ R9,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R7,\ R9,\ R6,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R4,\ R5,\ R9,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R7,\ R9,\ R6,\ 0x96,\ !PT\ ;\l|<exit0>\ \ BRA.U\ !UP1,\ `(.L_x_4)\ ;\l}"]
+".L_x_4":exit0:e -> ".L_x_4":entry:n [style=solid];
+".L_x_4":exit0:s -> ".L_x_3":entry:n [style=solid];
+node [fontname="Courier",fontsize=10,shape=Mrecord];
+".L_x_3"
+[label="{<entry>.L_x_3:\l\ \ UIADD3\ UR8,\ UPT,\ UPT,\ -UR5,\ URZ,\ URZ\ ;\l\ \ UISETP.NE.U32.AND\ UP1,\ UPT,\ UR4,\ URZ,\ UPT\ ;\l\ \ UISETP.GT.AND\ UP2,\ UPT,\ UR8,\ 0x4,\ UPT\ ;\l|<exit0>\ \ BRA.U\ !UP2,\ `(.L_x_5)\ ;\l|<exitpost0>\ \ LDSM.16.M88.4\ R4,\ \[R2\]\ ;\l\ \ UPLOP3.LUT\ UP0,\ UPT,\ UPT,\ UPT,\ UPT,\ 0x40,\ 0x4\ ;\l\ \ UIADD3\ UR5,\ UPT,\ UPT,\ UR5,\ 0x8,\ URZ\ ;\l\ \ LOP3.LUT\ R9,\ R4,\ R5,\ R9,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R7,\ R9,\ R6,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R4,\ R5,\ R9,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R7,\ R9,\ R6,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R4,\ R5,\ R9,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R7,\ R9,\ R6,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R4,\ R5,\ R9,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R7,\ R9,\ R6,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R4,\ R5,\ R9,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R7,\ R9,\ R6,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R4,\ R5,\ R9,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R7,\ R9,\ R6,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R4,\ R5,\ R9,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R7,\ R9,\ R6,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R4,\ R5,\ R9,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R7,\ R9,\ R6,\ 0x96,\ !PT\ ;\l}"]
+".L_x_3":exit0:e -> ".L_x_5":entry:n [style=solid];
+".L_x_3":exitpost0:s -> ".L_x_5":entry:n [style=solid];
+node [fontname="Courier",fontsize=10,shape=Mrecord];
+".L_x_5"
+[label="{<entry>.L_x_5:\l\ \ UISETP.NE.U32.OR\ UP0,\ UPT,\ UR5,\ URZ,\ UP0\ ;\l|<exit0>\ \ BRA.U\ !UP0,\ `(.L_x_6)\ ;\l}"]
+".L_x_5":exit0:e -> ".L_x_6":entry:n [style=solid];
+".L_x_5":exit0:s -> ".L_x_7":entry:n [style=solid];
+node [fontname="Courier",fontsize=10,shape=Mrecord];
+".L_x_7"
+[label="{<entry>.L_x_7:\l\ \ LDSM.16.M88.4\ R4,\ \[R2\]\ ;\l\ \ UIADD3\ UR5,\ UPT,\ UPT,\ UR5,\ 0x4,\ URZ\ ;\l\ \ UISETP.NE.U32.AND\ UP0,\ UPT,\ UR5,\ URZ,\ UPT\ ;\l\ \ LOP3.LUT\ R9,\ R4,\ R5,\ R9,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R7,\ R9,\ R6,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R4,\ R5,\ R9,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R7,\ R9,\ R6,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R4,\ R5,\ R9,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R7,\ R9,\ R6,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R4,\ R5,\ R9,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R7,\ R9,\ R6,\ 0x96,\ !PT\ ;\l|<exit0>\ \ BRA.U\ UP0,\ `(.L_x_7)\ ;\l}"]
+".L_x_7":exit0:e -> ".L_x_7":entry:n [style=solid];
+".L_x_7":exit0:s -> ".L_x_6":entry:n [style=solid];
+node [fontname="Courier",fontsize=10,shape=Mrecord];
+".L_x_6"
+[label="{<entry>.L_x_6:\l|<exit0>\ \ BRA.U\ !UP1,\ `(.L_x_0)\ ;\l}"]
+".L_x_6":exit0:e -> ".L_x_0":entry:n [style=solid];
+".L_x_6":exit0:s -> ".L_x_1":entry:n [style=solid];
+node [fontname="Courier",fontsize=10,shape=Mrecord];
+".L_x_1"
+[label="{<entry>.L_x_1:\l\ \ UIADD3\ UR4,\ UPT,\ UPT,\ -UR4,\ URZ,\ URZ\ ;\l}"]
+".L_x_1":entry:s -> ".L_x_8":entry:n [style=solid];
+node [fontname="Courier",fontsize=10,shape=Mrecord];
+".L_x_8"
+[label="{<entry>.L_x_8:\l\ \ LDSM.16.M88.4\ R4,\ \[R2\]\ ;\l\ \ UIADD3\ UR4,\ UPT,\ UPT,\ UR4,\ 0x1,\ URZ\ ;\l\ \ UISETP.NE.U32.AND\ UP0,\ UPT,\ UR4,\ URZ,\ UPT\ ;\l\ \ LOP3.LUT\ R4,\ R4,\ R5,\ R9,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R7,\ R4,\ R6,\ 0x96,\ !PT\ ;\l|<exit0>\ \ BRA.U\ UP0,\ `(.L_x_8)\ ;\l}"]
+".L_x_8":exit0:e -> ".L_x_8":entry:n [style=solid];
+".L_x_8":exit0:s -> ".L_x_0":entry:n [style=solid];
+node [fontname="Courier",fontsize=10,shape=Mrecord];
+".L_x_0"
+[label="{<entry>.L_x_0:\l\ \ LDC.64\ R2,\ c\[0x0\]\[0x388\]\ ;\l\ \ IMAD.WIDE.U32\ R2,\ R0,\ 0x4,\ R2\ ;\l\ \ STG.E\ desc\[UR6\]\[R2.64\],\ R9\ ;\l|<exit0>\ \ EXIT\ ;\l}"]
+}
+subgraph "cluster__Z14ldsm_row_majorPK5uint4Pji" {
+node [fontname="Courier",fontsize=10,shape=Mrecord];
+"_Z14ldsm_row_majorPK5uint4Pji"
+[label="{<entry>	.global		_Z14ldsm_row_majorPK5uint4Pji\l	.type		_Z14ldsm_row_majorPK5uint4Pji,@function\l	.size		_Z14ldsm_row_majorPK5uint4Pji,(.L_x_21\ -\ _Z14ldsm_row_majorPK5uint4Pji)\l	.other		_Z14ldsm_row_majorPK5uint4Pji,\<no\ object\>\l_Z14ldsm_row_majorPK5uint4Pji:\l.text._Z14ldsm_row_majorPK5uint4Pji:\l\ \ LDC\ R1,\ c\[0x0\]\[0x37c\]\ ;\l\ \ S2R\ R0,\ SR_TID.X\ ;\l\ \ S2UR\ UR5,\ SR_CgaCtaId\ ;\l\ \ LDCU.64\ UR6,\ c\[0x0\]\[0x380\]\ ;\l\ \ HFMA2\ R3,\ -RZ,\ RZ,\ 0,\ 0\ ;\l\ \ MOV\ R9,\ RZ\ ;\l\ \ LDCU.64\ UR8,\ c\[0x0\]\[0x358\]\ ;\l\ \ UMOV\ UR4,\ 0x400\ ;\l\ \ ULEA\ UR4,\ UR5,\ UR4,\ 0x18\ ;\l\ \ IMAD.SHL.U32\ R2,\ R0,\ 0x10,\ RZ\ ;\l\ \ IADD.64\ R4,\ R2,\ UR6\ ;\l\ \ IADD\ R3,\ R2,\ UR4\ ;\l\ \ LDCU\ UR6,\ c\[0x0\]\[0x390\]\ ;\l\ \ @!PT\ LDS\ RZ,\ \[RZ\]\ ;\l\ \ @!PT\ LDS\ RZ,\ \[RZ\]\ ;\l\ \ @!PT\ LDS\ RZ,\ \[RZ\]\ ;\l\ \ LDGSTS.E.BYPASS.128\ \[R3\],\ desc\[UR8\]\[R4.64\]\ ;\l\ \ LDGDEPBAR\ ;\l\ \ UISETP.GE.AND\ UP0,\ UPT,\ UR6,\ 0x1,\ UPT\ ;\l\ \ DEPBAR.LE\ SB0,\ 0x0\ ;\l\ \ BAR.SYNC.DEFER_BLOCKING\ 0x0\ ;\l|<exit0>\ \ BRA.U\ !UP0,\ `(.L_x_10)\ ;\l|<exitpost0>\ \ UISETP.GE.U32.AND\ UP0,\ UPT,\ UR6,\ 0x4,\ UPT\ ;\l\ \ LEA\ R2,\ R0,\ UR4,\ 0x7\ ;\l\ \ ULOP3.LUT\ UR5,\ UR6,\ 0x3,\ URZ,\ 0xc0,\ !UPT\ ;\l\ \ MOV\ R9,\ RZ\ ;\l|<exit1>\ \ BRA.U\ !UP0,\ `(.L_x_11)\ ;\l|<exitpost1>\ \ ULOP3.LUT\ UR4,\ UR6,\ 0x7ffffffc,\ URZ,\ 0xc0,\ !UPT\ ;\l\ \ HFMA2\ R9,\ -RZ,\ RZ,\ 0,\ 0\ ;\l\ \ UPLOP3.LUT\ UP0,\ UPT,\ UPT,\ UPT,\ UPT,\ 0x80,\ 0x8\ ;\l\ \ UIADD3\ UR4,\ UPT,\ UPT,\ -UR4,\ URZ,\ URZ\ ;\l\ \ UISETP.GE.U32.AND\ UP1,\ UPT,\ UR4,\ URZ,\ UPT\ ;\l|<exit2>\ \ BRA.U\ !UP1,\ `(.L_x_12)\ ;\l|<exitpost2>\ \ LDSM.16.M88.4\ R4,\ \[R2\]\ ;\l\ \ UPLOP3.LUT\ UP0,\ UPT,\ UPT,\ UPT,\ UPT,\ 0x40,\ 0x4\ ;\l\ \ UIADD3\ UR4,\ UPT,\ UPT,\ UR4,\ 0x4,\ URZ\ ;\l\ \ LOP3.LUT\ R9,\ R4,\ R5,\ R9,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R7,\ R9,\ R6,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R4,\ R5,\ R9,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R7,\ R9,\ R6,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R4,\ R5,\ R9,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R7,\ R9,\ R6,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R4,\ R5,\ R9,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R7,\ R9,\ R6,\ 0x96,\ !PT\ ;\l}"]
+"_Z14ldsm_row_majorPK5uint4Pji":exit0:e -> ".L_x_10":entry:n [style=solid];
+"_Z14ldsm_row_majorPK5uint4Pji":exit1:e -> ".L_x_11":entry:n [style=solid];
+"_Z14ldsm_row_majorPK5uint4Pji":exit2:e -> ".L_x_12":entry:n [style=solid];
+"_Z14ldsm_row_majorPK5uint4Pji":exitpost2:s -> ".L_x_12":entry:n [style=solid];
+node [fontname="Courier",fontsize=10,shape=Mrecord];
+".L_x_12"
+[label="{<entry>.L_x_12:\l\ \ UIADD3\ UR6,\ UPT,\ UPT,\ -UR4,\ URZ,\ URZ\ ;\l\ \ UISETP.GT.AND\ UP1,\ UPT,\ UR6,\ 0xc,\ UPT\ ;\l|<exit0>\ \ BRA.U\ !UP1,\ `(.L_x_13)\ ;\l|<exitpost0>\ \ UPLOP3.LUT\ UP0,\ UPT,\ UPT,\ UPT,\ UPT,\ 0x40,\ 0x4\ ;\l}"]
+".L_x_12":exit0:e -> ".L_x_13":entry:n [style=solid];
+".L_x_12":exitpost0:s -> ".L_x_14":entry:n [style=solid];
+node [fontname="Courier",fontsize=10,shape=Mrecord];
+".L_x_14"
+[label="{<entry>.L_x_14:\l\ \ LDSM.16.M88.4\ R4,\ \[R2\]\ ;\l\ \ UIADD3\ UR4,\ UPT,\ UPT,\ UR4,\ 0x10,\ URZ\ ;\l\ \ UISETP.GE.AND\ UP1,\ UPT,\ UR4,\ -0xc,\ UPT\ ;\l\ \ LOP3.LUT\ R9,\ R4,\ R5,\ R9,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R7,\ R9,\ R6,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R4,\ R5,\ R9,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R7,\ R9,\ R6,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R4,\ R5,\ R9,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R7,\ R9,\ R6,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R4,\ R5,\ R9,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R7,\ R9,\ R6,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R4,\ R5,\ R9,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R7,\ R9,\ R6,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R4,\ R5,\ R9,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R7,\ R9,\ R6,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R4,\ R5,\ R9,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R7,\ R9,\ R6,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R4,\ R5,\ R9,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R7,\ R9,\ R6,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R4,\ R5,\ R9,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R7,\ R9,\ R6,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R4,\ R5,\ R9,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R7,\ R9,\ R6,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R4,\ R5,\ R9,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R7,\ R9,\ R6,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R4,\ R5,\ R9,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R7,\ R9,\ R6,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R4,\ R5,\ R9,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R7,\ R9,\ R6,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R4,\ R5,\ R9,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R7,\ R9,\ R6,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R4,\ R5,\ R9,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R7,\ R9,\ R6,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R4,\ R5,\ R9,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R7,\ R9,\ R6,\ 0x96,\ !PT\ ;\l|<exit0>\ \ BRA.U\ !UP1,\ `(.L_x_14)\ ;\l}"]
+".L_x_14":exit0:e -> ".L_x_14":entry:n [style=solid];
+".L_x_14":exit0:s -> ".L_x_13":entry:n [style=solid];
+node [fontname="Courier",fontsize=10,shape=Mrecord];
+".L_x_13"
+[label="{<entry>.L_x_13:\l\ \ UIADD3\ UR6,\ UPT,\ UPT,\ -UR4,\ URZ,\ URZ\ ;\l\ \ UISETP.NE.U32.AND\ UP1,\ UPT,\ UR5,\ URZ,\ UPT\ ;\l\ \ UISETP.GT.AND\ UP2,\ UPT,\ UR6,\ 0x4,\ UPT\ ;\l|<exit0>\ \ BRA.U\ !UP2,\ `(.L_x_15)\ ;\l|<exitpost0>\ \ LDSM.16.M88.4\ R4,\ \[R2\]\ ;\l\ \ UPLOP3.LUT\ UP0,\ UPT,\ UPT,\ UPT,\ UPT,\ 0x40,\ 0x4\ ;\l\ \ UIADD3\ UR4,\ UPT,\ UPT,\ UR4,\ 0x8,\ URZ\ ;\l\ \ LOP3.LUT\ R9,\ R4,\ R5,\ R9,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R7,\ R9,\ R6,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R4,\ R5,\ R9,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R7,\ R9,\ R6,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R4,\ R5,\ R9,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R7,\ R9,\ R6,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R4,\ R5,\ R9,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R7,\ R9,\ R6,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R4,\ R5,\ R9,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R7,\ R9,\ R6,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R4,\ R5,\ R9,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R7,\ R9,\ R6,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R4,\ R5,\ R9,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R7,\ R9,\ R6,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R4,\ R5,\ R9,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R7,\ R9,\ R6,\ 0x96,\ !PT\ ;\l}"]
+".L_x_13":exit0:e -> ".L_x_15":entry:n [style=solid];
+".L_x_13":exitpost0:s -> ".L_x_15":entry:n [style=solid];
+node [fontname="Courier",fontsize=10,shape=Mrecord];
+".L_x_15"
+[label="{<entry>.L_x_15:\l\ \ UISETP.NE.U32.OR\ UP0,\ UPT,\ UR4,\ URZ,\ UP0\ ;\l|<exit0>\ \ BRA.U\ !UP0,\ `(.L_x_16)\ ;\l}"]
+".L_x_15":exit0:e -> ".L_x_16":entry:n [style=solid];
+".L_x_15":exit0:s -> ".L_x_17":entry:n [style=solid];
+node [fontname="Courier",fontsize=10,shape=Mrecord];
+".L_x_17"
+[label="{<entry>.L_x_17:\l\ \ LDSM.16.M88.4\ R4,\ \[R2\]\ ;\l\ \ UIADD3\ UR4,\ UPT,\ UPT,\ UR4,\ 0x4,\ URZ\ ;\l\ \ UISETP.NE.U32.AND\ UP0,\ UPT,\ UR4,\ URZ,\ UPT\ ;\l\ \ LOP3.LUT\ R9,\ R4,\ R5,\ R9,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R7,\ R9,\ R6,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R4,\ R5,\ R9,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R7,\ R9,\ R6,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R4,\ R5,\ R9,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R7,\ R9,\ R6,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R4,\ R5,\ R9,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R7,\ R9,\ R6,\ 0x96,\ !PT\ ;\l|<exit0>\ \ BRA.U\ UP0,\ `(.L_x_17)\ ;\l}"]
+".L_x_17":exit0:e -> ".L_x_17":entry:n [style=solid];
+".L_x_17":exit0:s -> ".L_x_16":entry:n [style=solid];
+node [fontname="Courier",fontsize=10,shape=Mrecord];
+".L_x_16"
+[label="{<entry>.L_x_16:\l|<exit0>\ \ BRA.U\ !UP1,\ `(.L_x_10)\ ;\l}"]
+".L_x_16":exit0:e -> ".L_x_10":entry:n [style=solid];
+".L_x_16":exit0:s -> ".L_x_11":entry:n [style=solid];
+node [fontname="Courier",fontsize=10,shape=Mrecord];
+".L_x_11"
+[label="{<entry>.L_x_11:\l\ \ UIADD3\ UR5,\ UPT,\ UPT,\ -UR5,\ URZ,\ URZ\ ;\l}"]
+".L_x_11":entry:s -> ".L_x_18":entry:n [style=solid];
+node [fontname="Courier",fontsize=10,shape=Mrecord];
+".L_x_18"
+[label="{<entry>.L_x_18:\l\ \ LDSM.16.M88.4\ R4,\ \[R2\]\ ;\l\ \ UIADD3\ UR5,\ UPT,\ UPT,\ UR5,\ 0x1,\ URZ\ ;\l\ \ UISETP.NE.U32.AND\ UP0,\ UPT,\ UR5,\ URZ,\ UPT\ ;\l\ \ LOP3.LUT\ R4,\ R4,\ R5,\ R9,\ 0x96,\ !PT\ ;\l\ \ LOP3.LUT\ R9,\ R7,\ R4,\ R6,\ 0x96,\ !PT\ ;\l|<exit0>\ \ BRA.U\ UP0,\ `(.L_x_18)\ ;\l}"]
+".L_x_18":exit0:e -> ".L_x_18":entry:n [style=solid];
+".L_x_18":exit0:s -> ".L_x_10":entry:n [style=solid];
+node [fontname="Courier",fontsize=10,shape=Mrecord];
+".L_x_10"
+[label="{<entry>.L_x_10:\l\ \ LDC.64\ R2,\ c\[0x0\]\[0x388\]\ ;\l\ \ IMAD.WIDE.U32\ R2,\ R0,\ 0x4,\ R2\ ;\l\ \ STG.E\ desc\[UR8\]\[R2.64\],\ R9\ ;\l|<exit0>\ \ EXIT\ ;\l}"]
+}
+}

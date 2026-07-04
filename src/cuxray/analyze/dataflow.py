@@ -288,7 +288,11 @@ def step(instr: Instruction, st: State, tids: dict[str, lv.Value]) -> None:
 
     if base.startswith(("LD", "ATOM", "RED", "TLD", "SULD")):
         if d:
-            if base.startswith("LD"):
+            if base.startswith("LDSM"):
+                # ldmatrix distributes fragments across lanes — result is
+                # lane-varying even when the address is uniform
+                val = lv.varying("data-dependent (matrix load result)")
+            elif base.startswith("LD"):
                 # A load at a warp-uniform address returns identical data to
                 # every lane — provably uniform. (Atomics excluded: serialized
                 # RMW returns different pre-values per lane even at one address.)

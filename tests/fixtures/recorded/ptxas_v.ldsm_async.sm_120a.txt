@@ -1,0 +1,11 @@
+ptxas info    : 0 bytes gmem
+ptxas info    : Compiling entry function '_Z11ldsm_paddedPK5uint4Pji' for 'sm_120a'
+ptxas info    : Function properties for _Z11ldsm_paddedPK5uint4Pji
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 12 registers, used 1 barriers, 4608 bytes smem
+ptxas info    : Compile time = 16.858 ms
+ptxas info    : Compiling entry function '_Z14ldsm_row_majorPK5uint4Pji' for 'sm_120a'
+ptxas info    : Function properties for _Z14ldsm_row_majorPK5uint4Pji
+    0 bytes stack frame, 0 bytes spill stores, 0 bytes spill loads
+ptxas info    : Used 12 registers, used 1 barriers, 4096 bytes smem
+ptxas info    : Compile time = 5.596 ms

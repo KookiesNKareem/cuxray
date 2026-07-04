@@ -120,9 +120,6 @@ def _stride(vec: tuple[int, ...]) -> Optional[int]:
 
 
 _SKIP_REASON = {
-    "LDSM": "matrix load — per-lane semantics not modeled yet",
-    "STSM": "matrix store — per-lane semantics not modeled yet",
-    "LDGSTS": "async global→shared copy — not modeled yet",
     "UTMALDG": "TMA bulk copy — hardware-managed, conflict-free by design",
     "UTMASTG": "TMA bulk copy — hardware-managed, conflict-free by design",
     "LD": "generic address space — cannot tell shared from global",
@@ -136,8 +133,79 @@ def analyze_accesses(func: Function, block_dims: tuple[int, int, int],
     pre = analyze(func, block_dims)
     accesses, unanalyzed = [], []
 
+    def make_entry(i, space, width=None):
+        return {
+            "addr": i.addr, "opcode": i.opcode, "space": space,
+            "width": width if width is not None else _op_width(i.opcode),
+            "file": i.file, "line": i.line, "block": i.block,
+            "loop_depth": loop_depth.get(i.block or "", 0),
+        }
+
+    def eval_addr(i, mem_text):
+        return (addr_value(mem_text, pre.get(i.addr, State()))
+                if mem_text else lv.varying("no address operand"))
+
+    def finish_shared(entry, vec):
+        entry["stride"] = _stride(vec)
+        ways, bcast = bank_conflict_ways(vec, entry["width"])
+        entry["verdict"] = "conflict" if ways > 1 else "clean"
+        entry["conflict_ways"] = ways
+        entry["broadcast"] = bcast
+        if ways > 1:
+            entry["fixes"] = _verified_fixes(vec, entry["width"])
+        accesses.append(entry)
+
+    def finish_global(entry, vec):
+        entry["stride"] = _stride(vec)
+        worst, best = sector_count(vec, entry["width"])
+        ideal = math.ceil(32 * entry["width"] / 32)
+        entry["sectors_worst"] = worst
+        entry["sectors_best"] = best
+        entry["sectors_ideal"] = ideal
+        entry["efficiency_pct"] = round(100.0 * ideal / worst, 1)
+        entry["verdict"] = "coalesced" if worst <= ideal + 1 else "uncoalesced"
+        accesses.append(entry)
+
+    def unknown(entry, val):
+        entry["verdict"] = "unknown"
+        entry["reason"] = val.reason or "address not traceable"
+        unanalyzed.append(entry)
+
     for i in func.instructions:
         base = i.opcode.split(".")[0]
+
+        if base in ("LDSM", "STSM"):
+            # ldmatrix/stmatrix: 8*num consecutive lanes each supply a 16 B
+            # row address; hardware services them in 8-lane phase groups —
+            # exactly the width-16 transaction-group model.
+            last = i.opcode.split(".")[-1]
+            num = int(last) if last.isdigit() else 1
+            entry = make_entry(i, "shared", width=16)
+            val = eval_addr(i, memory_operand(i))
+            if val.kind == lv.VARYING:
+                unknown(entry, val)
+            else:
+                finish_shared(entry, val.vec[:8 * num])
+            continue
+
+        if base == "LDGSTS":
+            # async copy: a global read AND a shared write in one instruction
+            groups = re.findall(r"\[([^\]]*)\]", i.operands)
+            smem_dst = groups[0] if groups else None
+            g_entry = make_entry(i, "global")
+            gval = eval_addr(i, memory_operand(i))  # last R-bearing bracket = src
+            if gval.kind == lv.VARYING:
+                unknown(g_entry, gval)
+            else:
+                finish_global(g_entry, gval.vec)
+            s_entry = make_entry(i, "shared")
+            sval = eval_addr(i, smem_dst)
+            if sval.kind == lv.VARYING:
+                unknown(s_entry, sval)
+            else:
+                finish_shared(s_entry, sval.vec)
+            continue
+
         space = {"LDS": "shared", "STS": "shared",
                  "LDG": "global", "STG": "global"}.get(base)
         if space is None:
@@ -148,37 +216,14 @@ def analyze_accesses(func: Function, block_dims: tuple[int, int, int],
                 })
             continue
 
-        entry = {
-            "addr": i.addr, "opcode": i.opcode, "space": space,
-            "width": _op_width(i.opcode), "file": i.file, "line": i.line,
-            "block": i.block, "loop_depth": loop_depth.get(i.block or "", 0),
-        }
-        mem = memory_operand(i)
-        val = addr_value(mem, pre.get(i.addr, State())) if mem else lv.varying()
+        entry = make_entry(i, space)
+        val = eval_addr(i, memory_operand(i))
         if val.kind == lv.VARYING:
-            entry["verdict"] = "unknown"
-            entry["reason"] = val.reason or "address not traceable"
-            unanalyzed.append(entry)
-            continue
-
-        vec = val.vec
-        entry["stride"] = _stride(vec)
-        if space == "shared":
-            ways, bcast = bank_conflict_ways(vec, entry["width"])
-            entry["verdict"] = "conflict" if ways > 1 else "clean"
-            entry["conflict_ways"] = ways
-            entry["broadcast"] = bcast
-            if ways > 1:
-                entry["fixes"] = _verified_fixes(vec, entry["width"])
+            unknown(entry, val)
+        elif space == "shared":
+            finish_shared(entry, val.vec)
         else:
-            worst, best = sector_count(vec, entry["width"])
-            ideal = math.ceil(32 * entry["width"] / 32)
-            entry["sectors_worst"] = worst
-            entry["sectors_best"] = best
-            entry["sectors_ideal"] = ideal
-            entry["efficiency_pct"] = round(100.0 * ideal / worst, 1)
-            entry["verdict"] = "coalesced" if worst <= ideal + 1 else "uncoalesced"
-        accesses.append(entry)
+            finish_global(entry, val.vec)
 
     worst_ways = max((a.get("conflict_ways", 1) for a in accesses), default=1)
     uncoalesced = sum(1 for a in accesses if a.get("verdict") == "uncoalesced")
