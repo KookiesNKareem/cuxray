@@ -51,10 +51,17 @@ def check_cubin(path: Path, tc) -> list[str]:
         table = plr.get(name, {})
         gi_addrs = {i.addr for i in func.instructions}
         plr_addrs = set(table)
-        if gi_addrs != plr_addrs:
+        # -plr legitimately omits trailing NOP padding; anything else missing
+        # (or extra) is a parser bug.
+        missing = gi_addrs - plr_addrs
+        by_addr = {i.addr: i for i in func.instructions}
+        non_nop_missing = [a for a in missing if by_addr[a].opcode != "NOP"]
+        extra = plr_addrs - gi_addrs
+        if non_nop_missing or extra:
             problems.append(
-                f"I2 {name[:50]}: gi has {len(gi_addrs)} addrs, plr {len(plr_addrs)}, "
-                f"sym-diff {len(gi_addrs ^ plr_addrs)}"
+                f"I2 {name[:50]}: non-NOP missing from plr {len(non_nop_missing)} "
+                f"(e.g. {[by_addr[a].opcode for a in sorted(non_nop_missing)[:4]]}), "
+                f"extra in plr {len(extra)}"
             )
         sass.merge_liveness(dis, plr)
         p = pressure(func)
@@ -75,10 +82,13 @@ def check_cubin(path: Path, tc) -> list[str]:
 
 
 def main():
-    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    argv = sys.argv[1:]
     sample = 0
-    if "--sample" in sys.argv:
-        sample = int(sys.argv[sys.argv.index("--sample") + 1])
+    if "--sample" in argv:
+        i = argv.index("--sample")
+        sample = int(argv[i + 1])
+        argv = argv[:i] + argv[i + 2:]
+    args = argv
     cubins: list[Path] = []
     for a in args:
         p = Path(a)
