@@ -121,6 +121,11 @@ def analyze_unit(
         names = [n for n in names if pat.search(n)]
     demangled = _demangle(names)
 
+    # Per-kernel block shape from binary metadata when the user gave none:
+    # .reqntid is exact; .maxntid (__launch_bounds__) is an upper bound we
+    # use as the assumed launch shape, with a note.
+    meta_dims = elf.launch_dims(data) if (block_dims is None and level == "full") else {}
+
     kernels = []
     for name in names:
         notes: list[str] = []
@@ -155,6 +160,7 @@ def analyze_unit(
         }
 
         realloc = False
+        k_dims, k_threads = block_dims, threads
         if func:
             if not any(i.file for i in func.instructions):
                 notes.append(
@@ -178,9 +184,22 @@ def analyze_unit(
                     "— dynamic smem of unknown launch-time size; occupancy "
                     "assumes 0 B, pass --smem-dynamic N for the real number"
                 )
-            if block_dims:
+            if k_dims is None:
+                md = meta_dims.get(name) or {}
+                if md.get("reqntid"):
+                    k_dims = md["reqntid"]
+                    notes.append(f"block shape {k_dims} from binary metadata (.reqntid)")
+                elif md.get("maxntid"):
+                    k_dims = md["maxntid"]
+                    notes.append(
+                        f"block shape assumed {k_dims} from __launch_bounds__ "
+                        "(.maxntid upper bound) — pass --threads to override"
+                    )
+                if k_dims:
+                    k_threads = k_dims[0] * k_dims[1] * k_dims[2]
+            if k_dims:
                 depths = cfg.get(name).loop_depth if name in cfg else {}
-                acc = analyze_accesses(func, block_dims, depths)
+                acc = analyze_accesses(func, k_dims, depths)
                 k["access"] = {
                     key: acc[key] for key in (
                         "block_dims", "analyzed_count", "unanalyzed_count",
@@ -189,14 +208,14 @@ def analyze_unit(
                     )
                 }
                 k["access"]["by_site"] = acc["by_site"][:30]
-                if block_dims[0] % 32:
+                if k_dims[0] % 32:
                     notes.append(
-                        f"blockDim.x={block_dims[0]} is not a multiple of 32 — "
+                        f"blockDim.x={k_dims[0]} is not a multiple of 32 — "
                         "access analysis models warp 0 only; other warps may differ"
                     )
 
-        if spec and threads and r and r.reg is not None:
-            occ = compute(spec, r.reg, threads, smem_static=smem_static,
+        if spec and k_threads and r and r.reg is not None:
+            occ = compute(spec, r.reg, k_threads, smem_static=smem_static,
                           smem_dynamic=smem_dynamic or 0,
                           carveout_kb=carveout_kb)
             d = occ.to_dict()

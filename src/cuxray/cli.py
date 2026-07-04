@@ -76,8 +76,10 @@ def report(path, threads, carveout, kernel_re, arch, fast, smem_dynamic, as_json
         click.echo(json.dumps(doc, indent=2))
     else:
         render_report(doc, console)
-        if not threads:
-            console.print("\n[dim]tip: pass --threads N for occupancy + cliff analysis[/]")
+        has_occ = any(k.get("occupancy") for u in doc["units"] for k in u["kernels"])
+        if not threads and not has_occ:
+            console.print("\n[dim]tip: pass --threads N (or 'X,Y') for occupancy, "
+                          "cliff, and access analysis[/]")
 
 
 @main.command()

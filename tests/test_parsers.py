@@ -119,3 +119,16 @@ subgraph "cluster_k" {
         assert d[".L_A"] == 1, d
         assert d[".L_B"] == 1, d
         assert d[".L_X"] == 0, d
+
+
+class TestLaunchDims:
+    def test_maxntid_from_launch_bounds(self):
+        from cuxray.parse import elf
+        data = (Path(__file__).parent / "fixtures" / "bin" /
+                "launch_bounds.sm_90.cubin").read_bytes()
+        dims = elf.launch_dims(data)
+        bounded = next(v for k, v in dims.items() if "bounded" in k)
+        assert bounded["maxntid"] == (256, 1, 1)
+        assert bounded["reqntid"] is None
+        plain = next(v for k, v in dims.items() if "plain" in k)
+        assert plain["maxntid"] is None or plain["maxntid"] == (1024, 1, 1)

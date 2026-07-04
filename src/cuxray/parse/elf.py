@@ -53,6 +53,62 @@ def _sections(data: bytes) -> list[dict]:
     return secs
 
 
+_EIFMT_SVAL = 0x04
+_EIATTR_MAX_THREADS = 0x05  # __launch_bounds__ / .maxntid (upper bound)
+_EIATTR_REQNTID = 0x10      # .reqntid (exact block shape)
+# Both derived empirically against cuobjdump --dump-elf decode on fixtures
+# (launch_bounds.sm_90.cubin → MAX_THREADS [256,1,1]; hand-written .reqntid
+# PTX → REQNTID [96,2,1]).
+
+
+def launch_dims(data: bytes) -> dict[str, dict]:
+    """Per-kernel block-shape metadata from .nv.info.<kernel> sections.
+
+    Returns {kernel: {"reqntid": (x,y,z)|None, "maxntid": (x,y,z)|None}}.
+    reqntid is the exact launch shape; maxntid an upper bound (__launch_bounds__).
+    """
+    import struct as _struct
+    if machine(data) != EM_CUDA:
+        return {}
+    shoff = _struct.unpack_from("<Q", data, 0x28)[0]
+    shentsize = _struct.unpack_from("<H", data, 0x3A)[0]
+    shnum = _struct.unpack_from("<H", data, 0x3C)[0]
+    shstrndx = _struct.unpack_from("<H", data, 0x3E)[0]
+    secs = _sections(data)
+    shstr = secs[shstrndx]
+
+    def sec_name(nameoff: int) -> str:
+        s = shstr["offset"] + nameoff
+        return data[s:data.index(b"\0", s)].decode(errors="replace")
+
+    out: dict[str, dict] = {}
+    for i in range(shnum):
+        off = shoff + i * shentsize
+        nameoff = _struct.unpack_from("<I", data, off)[0]
+        name = sec_name(nameoff)
+        if not name.startswith(".nv.info."):
+            continue
+        kernel = name[len(".nv.info."):]
+        raw = data[secs[i]["offset"]:secs[i]["offset"] + secs[i]["size"]]
+        entry = out.setdefault(kernel, {"reqntid": None, "maxntid": None})
+        p = 0
+        while p + 4 <= len(raw):
+            fmt, attr = raw[p], raw[p + 1]
+            if fmt == _EIFMT_SVAL:
+                sz = _struct.unpack_from("<H", raw, p + 2)[0]
+                if attr in (_EIATTR_MAX_THREADS, _EIATTR_REQNTID) and sz >= 12:
+                    dims = tuple(
+                        _struct.unpack_from("<I", raw, p + 4 + k)[0]
+                        for k in (0, 4, 8)
+                    )
+                    key = "reqntid" if attr == _EIATTR_REQNTID else "maxntid"
+                    entry[key] = dims
+                p += 4 + sz
+            else:
+                p += 4  # NVAL/BVAL/HVAL are all 4-byte records
+    return out
+
+
 def functions(data: bytes) -> list[tuple[int, str]]:
     """All STT_FUNC symbols as (symbol_index, name)."""
     if machine(data) is None:
