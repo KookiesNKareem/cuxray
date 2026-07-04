@@ -193,10 +193,38 @@ def analyze_accesses(func: Function, block_dims: tuple[int, int, int],
     worst_ways = max((a.get("conflict_ways", 1) for a in accesses), default=1)
     uncoalesced = sum(1 for a in accesses if a.get("verdict") == "uncoalesced")
     conflicted = sum(1 for a in accesses if a.get("verdict") == "conflict")
+
+    # Aggregate per source site for reporting (raw lists get huge on CUTLASS)
+    sites: dict[tuple, dict] = {}
+    for a in accesses:
+        key = (a["file"], a["line"], a["space"], a["verdict"])
+        s = sites.setdefault(key, {
+            "file": a["file"], "line": a["line"], "space": a["space"],
+            "verdict": a["verdict"], "count": 0, "loop_depth": 0,
+            "conflict_ways": 1, "efficiency_pct": None, "stride": a.get("stride"),
+        })
+        s["count"] += 1
+        s["loop_depth"] = max(s["loop_depth"], a["loop_depth"])
+        if "conflict_ways" in a:
+            s["conflict_ways"] = max(s["conflict_ways"], a["conflict_ways"])
+        if "efficiency_pct" in a:
+            cur = s["efficiency_pct"]
+            s["efficiency_pct"] = a["efficiency_pct"] if cur is None else min(cur, a["efficiency_pct"])
+    by_site = sorted(
+        sites.values(),
+        key=lambda s: (s["verdict"] in ("clean", "coalesced"), -s["loop_depth"],
+                       -s["conflict_ways"], -s["count"]),
+    )
+    reasons: dict[str, int] = {}
+    for u in unanalyzed:
+        reasons[u["reason"]] = reasons.get(u["reason"], 0) + 1
+
     return {
         "block_dims": list(block_dims),
         "accesses": accesses,
+        "by_site": by_site,
         "unanalyzed": unanalyzed,
+        "unanalyzed_by_reason": reasons,
         "analyzed_count": len(accesses),
         "unanalyzed_count": len(unanalyzed),
         "worst_bank_conflict_ways": worst_ways,

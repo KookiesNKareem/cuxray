@@ -57,7 +57,8 @@ def ls(path, as_json):
 
 @main.command()
 @click.argument("path", type=click.Path(exists=True))
-@click.option("--threads", type=int, default=None, help="block size for occupancy analysis")
+@click.option("--threads", type=str, default=None,
+              help="block shape for occupancy + access analysis: '256' or '32,8[,1]'")
 @click.option("--carveout", type=int, default=None, help="smem carveout KB (default: max)")
 @click.option("--kernel", "kernel_re", default=None, help="regex filter on kernel names")
 @click.option("--arch", default=None, help="architecture for .ptx input (e.g. sm_120a)")
@@ -131,7 +132,7 @@ def occupancy(arch, regs, threads, smem, carveout, sweep, as_json):
 @main.command()
 @click.argument("old", type=click.Path(exists=True))
 @click.argument("new", type=click.Path(exists=True))
-@click.option("--threads", type=int, default=None)
+@click.option("--threads", type=str, default=None)
 @click.option("--kernel", "kernel_re", default=None)
 @click.option("--json", "as_json", is_flag=True)
 def diff(old, new, threads, kernel_re, as_json):
@@ -151,15 +152,18 @@ def diff(old, new, threads, kernel_re, as_json):
 @click.argument("path", type=click.Path(exists=True))
 @click.argument("expr")
 @click.option("--kernel", "kernel_re", default=None)
+@click.option("--threads", type=str, default=None,
+              help="block shape, required for bank_ways/uncoalesced metrics")
 @click.option("--json", "as_json", is_flag=True)
-def gate(path, expr, kernel_re, as_json):
-    """CI gate: exit 1 if EXPR is violated (e.g. "spill_instrs==0, regs<=168")."""
+def gate(path, expr, kernel_re, threads, as_json):
+    """CI gate: exit 1 if EXPR is violated
+    (e.g. "spill_instrs==0, regs<=168, bank_ways<=2")."""
     try:
         clauses = parse_gate(expr)
     except GateSyntaxError as e:
         err.print(f"[red]gate syntax:[/] {e}")
         sys.exit(2)
-    doc = _report_or_die(path, kernel_re=kernel_re)
+    doc = _report_or_die(path, kernel_re=kernel_re, threads=threads)
     violations = eval_gate(doc, clauses)
     if as_json:
         click.echo(json.dumps({"violations": violations, "passed": not violations}, indent=2))

@@ -33,7 +33,8 @@ _CLAUSE = re.compile(
 
 METRICS = (
     "regs", "stack", "smem", "spill_instrs", "spill_stores", "spill_loads",
-    "spill_bytes", "pressure_peak", "occupancy",
+    "spill_bytes", "pressure_peak", "occupancy", "bank_ways", "uncoalesced",
+    "unanalyzed_accesses",
 )
 
 
@@ -98,6 +99,15 @@ def _metric_value(kernel: dict, arch: Optional[str], clause: Clause):
     if clause.metric == "pressure_peak":
         pr = kernel.get("pressure") or {}
         return pr.get("peak", {}).get("live_gpr") if pr.get("available") else None
+    if clause.metric in ("bank_ways", "uncoalesced", "unanalyzed_accesses"):
+        acc = kernel.get("access")
+        if not acc:
+            return None  # needs report/gate --threads
+        return {
+            "bank_ways": acc.get("worst_bank_conflict_ways"),
+            "uncoalesced": acc.get("uncoalesced_global_accesses"),
+            "unanalyzed_accesses": acc.get("unanalyzed_count"),
+        }[clause.metric]
     if clause.metric == "occupancy":
         if not arch or r.get("regs") is None:
             return None
@@ -138,6 +148,8 @@ _DIFF_METRICS = (
     ("spill_bytes_total", None),  # computed
     ("pressure_peak", None),      # computed
     ("occupancy_pct", None),      # computed
+    ("bank_conflict_ways", ("access", "worst_bank_conflict_ways")),
+    ("uncoalesced_accesses", ("access", "uncoalesced_global_accesses")),
 )
 
 

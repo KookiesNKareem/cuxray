@@ -32,6 +32,7 @@ from pathlib import Path
 from typing import Optional
 
 from . import SCHEMA_VERSION, __version__
+from .analyze.access import analyze_accesses
 from .analyze.liveness import pressure
 from .analyze.spillmap import spill_map
 from .archspec import lookup
@@ -43,6 +44,17 @@ from .toolchain import Toolchain
 
 def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def parse_block_dims(threads: Optional[str]) -> tuple[Optional[tuple[int, int, int]], Optional[int]]:
+    """'256' → ((256,1,1), 256); '32,8' → ((32,8,1), 256); None → (None, None)."""
+    if threads is None:
+        return None, None
+    parts = [int(p) for p in str(threads).split(",")]
+    while len(parts) < 3:
+        parts.append(1)
+    dims = (parts[0], parts[1], parts[2])
+    return dims, dims[0] * dims[1] * dims[2]
 
 
 def _demangle(names: list[str]) -> dict[str, str]:
@@ -67,6 +79,7 @@ def analyze_unit(
     level: str = "full",
     fast: bool = False,
     smem_dynamic: Optional[int] = None,
+    block_dims: Optional[tuple[int, int, int]] = None,
 ) -> dict:
     cubin = str(unit.cubin)
     data = unit.cubin.read_bytes()
@@ -137,6 +150,7 @@ def analyze_unit(
             "pressure": {"available": False},
             "spills": None,
             "occupancy": None,
+            "access": None,
             "notes": notes,
         }
 
@@ -164,6 +178,22 @@ def analyze_unit(
                     "— dynamic smem of unknown launch-time size; occupancy "
                     "assumes 0 B, pass --smem-dynamic N for the real number"
                 )
+            if block_dims:
+                depths = cfg.get(name).loop_depth if name in cfg else {}
+                acc = analyze_accesses(func, block_dims, depths)
+                k["access"] = {
+                    key: acc[key] for key in (
+                        "block_dims", "analyzed_count", "unanalyzed_count",
+                        "unanalyzed_by_reason", "worst_bank_conflict_ways",
+                        "conflicted_shared_accesses", "uncoalesced_global_accesses",
+                    )
+                }
+                k["access"]["by_site"] = acc["by_site"][:30]
+                if block_dims[0] % 32:
+                    notes.append(
+                        f"blockDim.x={block_dims[0]} is not a multiple of 32 — "
+                        "access analysis models warp 0 only; other warps may differ"
+                    )
 
         if spec and threads and r and r.reg is not None:
             occ = compute(spec, r.reg, threads, smem_static=smem_static,
@@ -187,7 +217,7 @@ def analyze_unit(
 def build_report(
     path: str | Path,
     tc: Toolchain,
-    threads: Optional[int] = None,
+    threads: Optional[str] = None,  # "256" or "32,8[,1]" block shape
     carveout_kb: Optional[int] = None,
     kernel_re: Optional[str] = None,
     arch: Optional[str] = None,
@@ -197,6 +227,7 @@ def build_report(
 ) -> dict:
     import tempfile
 
+    block_dims, total_threads = parse_block_dims(threads)
     p = Path(path)
     workdir_ctx = tempfile.TemporaryDirectory(prefix="cuxray_")
     units = ingest(p, tc, workdir=Path(workdir_ctx.name), arch=arch)
@@ -217,9 +248,9 @@ def build_report(
             "artifact": {"path": str(p), "sha256": _sha256(p) if p.is_file() else None},
             "toolchain": tc.describe(),
             "units": [
-                analyze_unit(u, tc, threads=threads, carveout_kb=carveout_kb,
+                analyze_unit(u, tc, threads=total_threads, carveout_kb=carveout_kb,
                              kernel_re=kernel_re, level=level, fast=fast,
-                             smem_dynamic=smem_dynamic)
+                             smem_dynamic=smem_dynamic, block_dims=block_dims)
                 for u in units
             ],
         }

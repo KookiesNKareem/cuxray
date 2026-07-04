@@ -90,6 +90,40 @@ def _render_kernel(k: dict, console: Console) -> None:
                     f"({c['delta']:+}) gives {c['blocks_per_sm']} blocks/SM "
                     f"({c['occupancy_pct']}%)"
                 )
+    acc = k.get("access")
+    if acc:
+        bad = [s for s in acc["by_site"]
+               if s["verdict"] in ("conflict", "uncoalesced")]
+        if bad:
+            t = Table(show_header=True, header_style="dim", box=None, padding=(0, 2))
+            t.add_column("location")
+            t.add_column("issue")
+            t.add_column("count")
+            t.add_column("loop depth")
+            for s in bad[:8]:
+                loc = f"{(s['file'] or '?').rsplit('/', 1)[-1]}:{s['line']}" if s["line"] else "?"
+                if s["verdict"] == "conflict":
+                    issue = f"[red]{s['conflict_ways']}-way bank conflict[/]"
+                    if s.get("stride") is not None:
+                        issue += f" (stride {s['stride']} B)"
+                else:
+                    issue = f"[yellow]uncoalesced ({s['efficiency_pct']}% efficiency)[/]"
+                depth = s["loop_depth"]
+                t.add_row(loc, issue, str(s["count"]), f"{depth} {'🔥' * depth}")
+            console.print(f"    [red]access issues:[/] {acc['conflicted_shared_accesses']} "
+                          f"conflicted shared · {acc['uncoalesced_global_accesses']} uncoalesced global")
+            console.print(t)
+        else:
+            console.print(
+                f"    [green]access patterns clean[/] "
+                f"({acc['analyzed_count']} analyzed)"
+            )
+        if acc["unanalyzed_count"]:
+            top = max(acc["unanalyzed_by_reason"].items(), key=lambda kv: kv[1])
+            console.print(
+                f"    [dim]{acc['unanalyzed_count']} access(es) not analyzable "
+                f"(mostly: {top[0]})[/]"
+            )
     for n in k.get("notes", []):
         console.print(f"    [dim]note: {n}[/]")
 
