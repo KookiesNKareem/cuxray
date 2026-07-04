@@ -16,16 +16,30 @@ def _fmt_bytes(n) -> str:
 
 
 def render_report(doc: dict, console: Console) -> None:
+    shown = 0
     for unit in doc["units"]:
+        if not unit["kernels"]:
+            continue
+        shown += 1
         console.print(f"\n[bold cyan]{unit['label']}[/]  [dim]{unit['arch'] or '?'}[/]")
         for k in unit["kernels"]:
             _render_kernel(k, console)
+    skipped = len(doc["units"]) - shown
+    if skipped:
+        console.print(f"\n[dim]({skipped} unit(s) with no matching kernels not shown)[/]")
+
+
+def _shorten(name: str, limit: int = 140) -> str:
+    if len(name) <= limit:
+        return name
+    # Template monsters (CUTLASS): keep the head, elide the middle
+    return name[: limit - 22] + " …[" + str(len(name)) + " chars]"
 
 
 def _render_kernel(k: dict, console: Console) -> None:
     r = k["resources"]
     name = k["demangled"] if k["demangled"] != k["name"] else k["name"]
-    console.print(f"\n  [bold]{name}[/]")
+    console.print(f"\n  [bold]{_shorten(name)}[/]")
     parts = [f"regs [bold]{r['regs']}[/]"]
     if r.get("smem_static"):
         parts.append(f"smem {_fmt_bytes(r['smem_static'])}")
@@ -92,7 +106,7 @@ def render_ls(doc: dict, console: Console) -> None:
         for k in unit["kernels"]:
             r = k["resources"]
             t.add_row(
-                unit["label"], unit["arch"] or "?", k["demangled"],
+                unit["label"], unit["arch"] or "?", _shorten(k["demangled"], 90),
                 str(r["regs"]), _fmt_bytes(r["smem_static"]), _fmt_bytes(r["stack_frame"]),
             )
     console.print(t)

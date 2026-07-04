@@ -108,3 +108,14 @@ class TestDiff:
         d = diff_reports(_mini_doc(), _mini_doc())
         assert d["changed"] == 0
         assert d["added"] == d["removed"] == []
+
+
+def test_register_reallocation_detection():
+    from cuxray.parse.sass import Function, Instruction, uses_register_reallocation
+    plain = Function(name="k", instructions=[Instruction(addr=0, opcode="FFMA", operands="")])
+    assert not uses_register_reallocation(plain)
+    ws = Function(name="k", instructions=[
+        Instruction(addr=0, opcode="USETMAXREG.DEALLOC.CTAPOOL", operands="..."),
+        Instruction(addr=16, opcode="FFMA", operands=""),
+    ])
+    assert uses_register_reallocation(ws)

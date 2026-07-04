@@ -35,9 +35,9 @@ from . import SCHEMA_VERSION, __version__
 from .analyze.liveness import pressure
 from .analyze.spillmap import spill_map
 from .archspec import lookup
-from .ingest import CubinUnit, ingest
+from .ingest import CubinUnit, IngestError, ingest
 from .occupancy import compute, find_cliffs
-from .parse import cfgdot, resusage, sass
+from .parse import cfgdot, elf, resusage, sass
 from .toolchain import Toolchain
 
 
@@ -64,18 +64,38 @@ def analyze_unit(
     threads: Optional[int] = None,
     carveout_kb: Optional[int] = None,
     kernel_re: Optional[str] = None,
+    level: str = "full",
+    fast: bool = False,
 ) -> dict:
     cubin = str(unit.cubin)
+    data = unit.cubin.read_bytes()
     res = resusage.parse(tc.run("cuobjdump", ["--dump-resource-usage", cubin]))
-    dis = sass.parse_gi(tc.run("nvdisasm", ["-c", "-gi", cubin]))
-    plr = sass.parse_plr(tc.run("nvdisasm", ["-c", "-plr", cubin]))
-    sass.merge_liveness(dis, plr)
-    try:
-        cfg = cfgdot.parse(tc.run("nvdisasm", ["-cfg", cubin]))
-    except Exception:
-        cfg = {}
 
-    arch = dis.target or unit.arch
+    pat = re.compile(kernel_re) if kernel_re else None
+
+    dis = sass.Disassembly()
+    cfg: dict = {}
+    if level == "full":
+        # Restrict disassembly to matching kernels via symbol indices —
+        # 38 s → 1.4 s on production-size cubins.
+        fun_args: list[str] = []
+        if pat:
+            idxs = [str(i) for i, name in elf.functions(data) if pat.search(name)]
+            if not idxs:
+                level = "resources"  # nothing matches; skip disassembly
+            else:
+                fun_args = ["-fun", ",".join(idxs)]
+        if level == "full":
+            dis = sass.parse_gi(tc.run("nvdisasm", ["-c", "-gi", *fun_args, cubin]))
+            if not fast:
+                plr = sass.parse_plr(tc.run("nvdisasm", ["-c", "-plr", *fun_args, cubin]))
+                sass.merge_liveness(dis, plr)
+            try:
+                cfg = cfgdot.parse(tc.run("nvdisasm", ["-cfg", *fun_args, cubin]))
+            except Exception:
+                cfg = {}
+
+    arch = dis.target or elf.sm_arch(data) or unit.arch
     spec = None
     try:
         spec = lookup(arch) if arch else None
@@ -83,8 +103,7 @@ def analyze_unit(
         pass
 
     names = sorted(set(res) | set(dis.functions))
-    if kernel_re:
-        pat = re.compile(kernel_re)
+    if pat:
         names = [n for n in names if pat.search(n)]
     demangled = _demangle(names)
 
@@ -120,6 +139,7 @@ def analyze_unit(
             "notes": notes,
         }
 
+        realloc = False
         if func:
             if not any(i.file for i in func.instructions):
                 notes.append(
@@ -129,11 +149,19 @@ def analyze_unit(
             k["pressure"] = pressure(func)
             depths = cfg.get(name).loop_depth if name in cfg else {}
             k["spills"] = spill_map(func, depths)
+            realloc = sass.uses_register_reallocation(func)
+            if realloc:
+                notes.append(
+                    f"dynamic register reallocation (USETMAXREG) detected — "
+                    f"REG={r.reg if r else '?'} is the post-reallocation maximum, "
+                    "not the launch allocation; occupancy from it is pessimistic"
+                )
 
         if spec and threads and r and r.reg is not None:
             occ = compute(spec, r.reg, threads, smem_static=smem_static)
             d = occ.to_dict()
             d["cliffs"] = find_cliffs(spec, occ)
+            d["register_reallocation"] = realloc
             k["occupancy"] = d
 
         kernels.append(k)
@@ -153,16 +181,35 @@ def build_report(
     carveout_kb: Optional[int] = None,
     kernel_re: Optional[str] = None,
     arch: Optional[str] = None,
+    level: str = "full",
+    fast: bool = False,
 ) -> dict:
+    import tempfile
+
     p = Path(path)
-    units = ingest(p, tc, arch=arch)
-    return {
-        "schema": SCHEMA_VERSION,
-        "cuxray_version": __version__,
-        "artifact": {"path": str(p), "sha256": _sha256(p) if p.is_file() else None},
-        "toolchain": tc.describe(),
-        "units": [
-            analyze_unit(u, tc, threads=threads, carveout_kb=carveout_kb, kernel_re=kernel_re)
-            for u in units
-        ],
-    }
+    workdir_ctx = tempfile.TemporaryDirectory(prefix="cuxray_")
+    units = ingest(p, tc, workdir=Path(workdir_ctx.name), arch=arch)
+    if arch and len(units) > 1:
+        # For multi-cubin artifacts, --arch acts as a unit filter (sm_90a
+        # matches sm_90 requests and vice versa; the ELF header carries no
+        # 'a' suffix).
+        want = arch.rstrip("af")
+        units = [u for u in units
+                 if (elf.sm_arch(u.cubin.read_bytes()) or "").rstrip("af") == want
+                 or want in u.label]
+        if not units:
+            raise IngestError(f"no cubins matching --arch {arch} in {p}")
+    try:
+        return {
+            "schema": SCHEMA_VERSION,
+            "cuxray_version": __version__,
+            "artifact": {"path": str(p), "sha256": _sha256(p) if p.is_file() else None},
+            "toolchain": tc.describe(),
+            "units": [
+                analyze_unit(u, tc, threads=threads, carveout_kb=carveout_kb,
+                             kernel_re=kernel_re, level=level, fast=fast)
+                for u in units
+            ],
+        }
+    finally:
+        workdir_ctx.cleanup()

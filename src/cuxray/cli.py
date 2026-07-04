@@ -47,8 +47,8 @@ def main():
 @click.argument("path", type=click.Path(exists=True))
 @click.option("--json", "as_json", is_flag=True, help="emit JSON")
 def ls(path, as_json):
-    """List kernels and headline resources in an artifact."""
-    doc = _report_or_die(path)
+    """List kernels and headline resources in an artifact (fast: no disassembly)."""
+    doc = _report_or_die(path, level="resources")
     if as_json:
         click.echo(json.dumps(doc, indent=2))
     else:
@@ -61,11 +61,12 @@ def ls(path, as_json):
 @click.option("--carveout", type=int, default=None, help="smem carveout KB (default: max)")
 @click.option("--kernel", "kernel_re", default=None, help="regex filter on kernel names")
 @click.option("--arch", default=None, help="architecture for .ptx input (e.g. sm_120a)")
+@click.option("--fast", is_flag=True, help="skip liveness analysis (no pressure curve)")
 @click.option("--json", "as_json", is_flag=True, help="emit JSON")
-def report(path, threads, carveout, kernel_re, arch, as_json):
+def report(path, threads, carveout, kernel_re, arch, fast, as_json):
     """Full static report: resources, pressure, spills, occupancy."""
     doc = _report_or_die(path, threads=threads, carveout_kb=carveout,
-                         kernel_re=kernel_re, arch=arch)
+                         kernel_re=kernel_re, arch=arch, fast=fast)
     if as_json:
         click.echo(json.dumps(doc, indent=2))
     else:

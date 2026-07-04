@@ -156,3 +156,12 @@ _SPILL_OPS = ("STL", "LDL")
 def is_spill(instr: Instruction) -> bool:
     op = instr.opcode.split(".")[0]
     return op in _SPILL_OPS
+
+
+def uses_register_reallocation(func: Function) -> bool:
+    """True if the kernel redistributes registers between warpgroups at
+    runtime (PTX setmaxnreg → SASS USETMAXREG on sm_90+). For such kernels
+    the recorded per-thread REG count is the post-reallocation *maximum*,
+    not the launch allocation — naive occupancy math from it is pessimistic
+    (often "0 blocks" for kernels that ship in production, e.g. FA3)."""
+    return any("SETMAXREG" in i.opcode for i in func.instructions)
