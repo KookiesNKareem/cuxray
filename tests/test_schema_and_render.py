@@ -17,13 +17,15 @@ SAMPLE = json.loads(
 
 def test_sample_report_conforms_to_schema():
     jsonschema = pytest.importorskip("jsonschema")
-    schema = json.loads((ROOT / "schema" / "cuxray.schema.1.json").read_text())
+    from importlib.resources import files
+    schema = json.loads(files("cuxray.schema").joinpath("cuxray.schema.1.json").read_text())
     jsonschema.validate(SAMPLE, schema)
 
 
 def test_schema_file_is_valid_jsonschema():
     jsonschema = pytest.importorskip("jsonschema")
-    schema = json.loads((ROOT / "schema" / "cuxray.schema.1.json").read_text())
+    from importlib.resources import files
+    schema = json.loads(files("cuxray.schema").joinpath("cuxray.schema.1.json").read_text())
     jsonschema.Draft202012Validator.check_schema(schema)
 
 

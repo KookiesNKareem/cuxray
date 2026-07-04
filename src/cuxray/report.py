@@ -48,14 +48,24 @@ def _sha256(path: Path) -> str:
 
 
 def parse_block_dims(threads: Optional[str]) -> tuple[Optional[tuple[int, int, int]], Optional[int]]:
-    """'256' → ((256,1,1), 256); '32,8' → ((32,8,1), 256); None → (None, None)."""
+    """'256' → ((256,1,1), 256); '32,8' → ((32,8,1), 256); None → (None, None).
+
+    Requires 1-3 comma-separated positive integers; total <= 1024.
+    """
     if threads is None:
         return None, None
     parts = [int(p) for p in str(threads).split(",")]
+    if not 1 <= len(parts) <= 3:
+        raise ValueError(f"--threads takes 1-3 dimensions, got {len(parts)}: {threads!r}")
+    if any(p < 1 for p in parts):
+        raise ValueError(f"--threads dimensions must be positive: {threads!r}")
     while len(parts) < 3:
         parts.append(1)
     dims = (parts[0], parts[1], parts[2])
-    return dims, dims[0] * dims[1] * dims[2]
+    total = dims[0] * dims[1] * dims[2]
+    if total > 1024:
+        raise ValueError(f"--threads total {total} exceeds the 1024 threads/block limit")
+    return dims, total
 
 
 def _demangle(names: list[str]) -> dict[str, str]:
@@ -95,7 +105,10 @@ def analyze_unit(
         # 38 s → 1.4 s on production-size cubins.
         fun_args: list[str] = []
         if pat:
-            idxs = [str(i) for i, name in elf.functions(data) if pat.search(name)]
+            funcs = elf.functions(data)
+            dem = _demangle([n for _, n in funcs])
+            idxs = [str(i) for i, name in funcs
+                    if pat.search(name) or pat.search(dem.get(name, name))]
             if not idxs:
                 level = "resources"  # nothing matches; skip disassembly
             else:
@@ -118,9 +131,10 @@ def analyze_unit(
         pass
 
     names = sorted(set(res) | set(dis.functions))
-    if pat:
-        names = [n for n in names if pat.search(n)]
     demangled = _demangle(names)
+    if pat:
+        names = [n for n in names
+                 if pat.search(n) or pat.search(demangled.get(n, n))]
 
     # Per-kernel block shape from binary metadata when the user gave none:
     # .reqntid is exact; .maxntid (__launch_bounds__) is an upper bound we
@@ -246,8 +260,10 @@ def _cache_key(unit: CubinUnit, tc: Toolchain, kw: dict) -> str:
     h = hashlib.sha256()
     h.update(unit.cubin.read_bytes())
     h.update(__version__.encode())
-    for t in ("nvdisasm", "cuobjdump"):
-        h.update(str(getattr(tc, t, "")).encode())
+    try:
+        h.update(tc.versions().encode())  # tool versions, not paths
+    except Exception:
+        h.update(b"unknown-toolchain")
     h.update(json.dumps(kw, sort_keys=True, default=str).encode())
     return h.hexdigest()
 
@@ -263,6 +279,7 @@ def _analyze_unit_cached(unit, tc, use_cache: bool, **kw) -> dict:
         try:
             doc = json.loads(path.read_text())
             doc["from_cache"] = True
+            doc["label"] = unit.label  # same bytes, possibly different filename
             return doc
         except (json.JSONDecodeError, OSError):
             pass  # corrupt cache entry: recompute

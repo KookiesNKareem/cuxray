@@ -64,3 +64,33 @@ jobs:
           assert d['changed'] == 0, d
           print('self-diff clean')
           "
+
+  release-artifact:
+    name: wheel builds, installs, and runs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install build twine
+      - run: python -m build
+      - run: twine check dist/*
+      - name: install built wheel in a clean venv and smoke-test
+        run: |
+          python -m venv /tmp/wheelenv
+          /tmp/wheelenv/bin/pip install -q dist/*.whl
+          /tmp/wheelenv/bin/python -c "
+          import cuxray
+          from cuxray.analyze.access import analyze_accesses  # must ship in wheel
+          from cuxray import build_report, diff_reports
+          print('wheel imports OK', cuxray.__version__)
+          "
+          /tmp/wheelenv/bin/cuxray --version
+          /tmp/wheelenv/bin/cuxray occupancy --arch sm_120 --regs 168 --threads 256 --json > /dev/null
+          /tmp/wheelenv/bin/cuxray report tests/fixtures/bin/spill.sm_120a.cubin --threads 256 --json | python -c "
+          import json, sys
+          d = json.load(sys.stdin)
+          assert d['units'][0]['kernels'][0]['spills']['store_bytes'] == 548
+          print('wheel CLI smoke OK')
+          "

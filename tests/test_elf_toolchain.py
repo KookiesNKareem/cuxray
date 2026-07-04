@@ -45,17 +45,37 @@ class TestToolchain:
         with pytest.raises(toolchain.ToolchainError, match="Linux container"):
             toolchain._plat_tag()
 
-    def test_from_dir_requires_all_tools(self, tmp_path):
-        for t in ("nvdisasm", "cuobjdump"):  # missing ptxas
+    def test_from_dir_ptxas_optional_unless_needed(self, tmp_path):
+        for t in ("nvdisasm", "cuobjdump"):  # core tools only
             p = tmp_path / t
             p.write_text("#!/bin/sh\n")
             p.chmod(0o755)
-        assert toolchain._from_dir(tmp_path, "env") is None
+        tc = toolchain._from_dir(tmp_path, "env")
+        assert tc is not None and tc.ptxas is None  # cubin analysis works
+        assert toolchain._from_dir(tmp_path, "env", need_ptxas=True) is None
         p = tmp_path / "ptxas"
         p.write_text("#!/bin/sh\n")
         p.chmod(0o755)
+        tc = toolchain._from_dir(tmp_path, "env", need_ptxas=True)
+        assert tc is not None and tc.ptxas is not None
+
+    def test_run_without_ptxas_raises_helpfully(self, tmp_path):
+        for t in ("nvdisasm", "cuobjdump"):
+            p = tmp_path / t
+            p.write_text("#!/bin/sh\n")
+            p.chmod(0o755)
         tc = toolchain._from_dir(tmp_path, "env")
-        assert tc is not None and tc.origin == "env"
+        with pytest.raises(toolchain.ToolchainError, match="doctor --fetch"):
+            tc.run("ptxas", ["--version"])
+
+    def test_no_fetch_env_disables_fetch(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("CUXRAY_NO_FETCH", "1")
+        monkeypatch.delenv("CUXRAY_TOOLCHAIN", raising=False)
+        monkeypatch.delenv("CUDA_HOME", raising=False)
+        monkeypatch.delenv("CUDA_PATH", raising=False)
+        monkeypatch.setattr(toolchain.shutil, "which", lambda _: None)
+        with pytest.raises(toolchain.ToolchainError, match="fetching disabled"):
+            toolchain.resolve()
 
     def test_resolution_prefers_env_dir(self, tmp_path, monkeypatch):
         for t in toolchain.TOOLS:

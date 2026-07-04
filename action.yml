@@ -20,7 +20,11 @@ inputs:
     required: false
     default: ""
   version:
-    description: "cuxray version to install (default: latest)"
+    description: "PyPI version to install instead of the action's own source (default: install the checked-out action source, so uses: ...@vX runs exactly vX)"
+    required: false
+    default: ""
+  source-root:
+    description: "Strip this prefix from source paths in SARIF (for repo-relative annotations)"
     required: false
     default: ""
   sarif:
@@ -34,7 +38,11 @@ runs:
     - name: Install cuxray
       shell: bash
       run: |
-        pip install "cuxray${{ inputs.version != '' && format('=={0}', inputs.version) || '' }}"
+        if [ -n "${{ inputs.version }}" ]; then
+          pip install "cuxray==${{ inputs.version }}"
+        else
+          pip install "$GITHUB_ACTION_PATH"
+        fi
     - name: Run gate
       shell: bash
       run: |
@@ -42,4 +50,5 @@ runs:
         [ -n "${{ inputs.threads }}" ] && ARGS+=(--threads "${{ inputs.threads }}")
         [ -n "${{ inputs.kernel }}" ] && ARGS+=(--kernel "${{ inputs.kernel }}")
         [ -n "${{ inputs.sarif }}" ] && ARGS+=(--sarif "${{ inputs.sarif }}")
+        [ -n "${{ inputs.source-root }}" ] && ARGS+=(--source-root "${{ inputs.source-root }}")
         cuxray gate "${{ inputs.path }}" "${{ inputs.gate }}" "${ARGS[@]}"

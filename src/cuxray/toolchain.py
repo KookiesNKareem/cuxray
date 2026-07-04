@@ -33,7 +33,11 @@ REDIST_BASE = "https://developer.download.nvidia.com/compute/cuda/redist/"
 # Manifest pin; component versions come from the manifest. Overridable for
 # CI matrix testing across toolkit versions.
 REDIST_VERSION = os.environ.get("CUXRAY_REDIST_VERSION", "13.3.1")
-COMPONENTS = ("cuda_nvdisasm", "cuda_cuobjdump", "cuda_nvcc")  # nvcc archive supplies ptxas
+# ptxas (from the cuda_nvcc archive) is only needed for .ptx inputs — cubin
+# and ELF analysis fetches just the two small disassembly tools (~5 MB vs ~35 MB).
+CORE_COMPONENTS = ("cuda_nvdisasm", "cuda_cuobjdump")
+PTXAS_COMPONENT = "cuda_nvcc"
+CORE_TOOLS = ("nvdisasm", "cuobjdump")
 TOOLS = ("nvdisasm", "cuobjdump", "ptxas")
 
 EULA_NOTE = (
@@ -51,11 +55,16 @@ class ToolchainError(RuntimeError):
 class Toolchain:
     nvdisasm: Path
     cuobjdump: Path
-    ptxas: Path
+    ptxas: Optional[Path]  # only needed for .ptx inputs
     origin: str  # "env" | "cuda_home" | "path" | "fetched"
 
     def run(self, tool: str, args: list[str], cwd: Optional[Path] = None) -> str:
         exe = getattr(self, tool)
+        if exe is None:
+            raise ToolchainError(
+                f"{tool} is not available — it is only fetched for PTX inputs; "
+                "run `cuxray doctor --fetch` to prefetch it, or install a CUDA toolkit"
+            )
         proc = subprocess.run(
             [str(exe), *args],
             capture_output=True, text=True, cwd=cwd,
@@ -66,10 +75,22 @@ class Toolchain:
             )
         return proc.stdout
 
+    _version_cache: Optional[dict] = None
+
+    def versions(self) -> str:
+        """Stable version fingerprint for cache keys (computed once)."""
+        if self._version_cache is None:
+            object.__setattr__(self, "_version_cache", self.describe())
+        d = self._version_cache
+        return "|".join(str((d.get(t) or {}).get("version", "?")) for t in TOOLS)
+
     def describe(self) -> dict:
         out = {"origin": self.origin}
         for t in TOOLS:
             exe = getattr(self, t)
+            if exe is None:
+                out[t] = None
+                continue
             try:
                 ver = subprocess.run([str(exe), "--version"], capture_output=True,
                                      text=True).stdout.strip().splitlines()
@@ -101,23 +122,34 @@ def _plat_tag() -> str:
     raise ToolchainError(f"unsupported machine architecture: {machine}")
 
 
-def _from_dir(d: Path, origin: str) -> Optional[Toolchain]:
-    paths = {t: d / t for t in TOOLS}
-    if all(p.is_file() and os.access(p, os.X_OK) for p in paths.values()):
-        return Toolchain(**{k: v for k, v in paths.items()}, origin=origin)
-    return None
+def _ok(p: Path) -> bool:
+    return p.is_file() and os.access(p, os.X_OK)
 
 
-def _from_path_env() -> Optional[Toolchain]:
-    found = {t: shutil.which(t) for t in TOOLS}
-    if all(found.values()):
-        return Toolchain(
-            nvdisasm=Path(found["nvdisasm"]),
-            cuobjdump=Path(found["cuobjdump"]),
-            ptxas=Path(found["ptxas"]),
-            origin="path",
-        )
-    return None
+def _from_dir(d: Path, origin: str, need_ptxas: bool = False) -> Optional[Toolchain]:
+    core = {t: d / t for t in CORE_TOOLS}
+    if not all(_ok(p) for p in core.values()):
+        return None
+    ptxas = d / "ptxas"
+    if need_ptxas and not _ok(ptxas):
+        return None
+    return Toolchain(nvdisasm=core["nvdisasm"], cuobjdump=core["cuobjdump"],
+                     ptxas=ptxas if _ok(ptxas) else None, origin=origin)
+
+
+def _from_path_env(need_ptxas: bool = False) -> Optional[Toolchain]:
+    found = {t: shutil.which(t) for t in CORE_TOOLS}
+    if not all(found.values()):
+        return None
+    ptxas = shutil.which("ptxas")
+    if need_ptxas and not ptxas:
+        return None
+    return Toolchain(
+        nvdisasm=Path(found["nvdisasm"]),
+        cuobjdump=Path(found["cuobjdump"]),
+        ptxas=Path(ptxas) if ptxas else None,
+        origin="path",
+    )
 
 
 def _download(url: str, dest: Path) -> None:
@@ -127,13 +159,14 @@ def _download(url: str, dest: Path) -> None:
     tmp.rename(dest)
 
 
-def _fetch(quiet: bool = False) -> Toolchain:
+def _fetch(quiet: bool = False, need_ptxas: bool = False) -> Toolchain:
     plat = _plat_tag()
     root = cache_dir() / "toolchain" / REDIST_VERSION / plat
     bin_dir = root / "bin"
-    tc = _from_dir(bin_dir, "fetched")
+    tc = _from_dir(bin_dir, "fetched", need_ptxas)
     if tc:
         return tc
+    components = list(CORE_COMPONENTS) + ([PTXAS_COMPONENT] if need_ptxas else [])
 
     root.mkdir(parents=True, exist_ok=True)
     manifest_path = root / "manifest.json"
@@ -143,7 +176,7 @@ def _fetch(quiet: bool = False) -> Toolchain:
 
     bin_dir.mkdir(exist_ok=True)
     with tempfile.TemporaryDirectory(dir=root) as td:
-        for comp in COMPONENTS:
+        for comp in components:
             try:
                 entry = manifest[comp][plat]
                 entry["relative_path"], entry["sha256"]
@@ -177,29 +210,35 @@ def _fetch(quiet: bool = False) -> Toolchain:
     if not quiet:
         print(f"cuxray: toolchain cached in {bin_dir}\n{EULA_NOTE}", file=sys.stderr)
 
-    tc = _from_dir(bin_dir, "fetched")
+    tc = _from_dir(bin_dir, "fetched", need_ptxas)
     if not tc:
         missing = [t for t in TOOLS if not (bin_dir / t).exists()]
         raise ToolchainError(f"fetch completed but tools missing: {missing}")
     return tc
 
 
-def resolve(allow_fetch: bool = True, quiet: bool = False) -> Toolchain:
+def resolve(allow_fetch: bool = True, quiet: bool = False,
+            need_ptxas: bool = False) -> Toolchain:
+    if os.environ.get("CUXRAY_NO_FETCH"):
+        allow_fetch = False
     env_dir = os.environ.get("CUXRAY_TOOLCHAIN")
     if env_dir:
-        tc = _from_dir(Path(env_dir), "env")
+        tc = _from_dir(Path(env_dir), "env", need_ptxas)
         if tc:
             return tc
         raise ToolchainError(f"$CUXRAY_TOOLCHAIN={env_dir} lacks {'/'.join(TOOLS)}")
     for var in ("CUDA_HOME", "CUDA_PATH"):
         home = os.environ.get(var)
         if home:
-            tc = _from_dir(Path(home) / "bin", "cuda_home")
+            tc = _from_dir(Path(home) / "bin", "cuda_home", need_ptxas)
             if tc:
                 return tc
-    tc = _from_path_env()
+    tc = _from_path_env(need_ptxas)
     if tc:
         return tc
     if allow_fetch:
-        return _fetch(quiet=quiet)
-    raise ToolchainError("no CUDA binary utilities found and fetching disabled")
+        return _fetch(quiet=quiet, need_ptxas=need_ptxas)
+    raise ToolchainError(
+        "no CUDA binary utilities found and fetching disabled "
+        "(CUXRAY_NO_FETCH is set or --offline)"
+    )

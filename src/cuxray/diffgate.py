@@ -127,6 +127,60 @@ def _metric_value(kernel: dict, arch: Optional[str], clause: Clause):
     return None
 
 
+def parse_budget(budget: dict) -> tuple[Optional[list[Clause]], list[tuple]]:
+    """Budget file: {"default": expr?, "kernels": [{"match": regex, "gate": expr}]}.
+
+    Returns (default_clauses, [(compiled_regex, clauses), ...]).
+    """
+    default = parse_gate(budget["default"]) if budget.get("default") else None
+    rules = []
+    for rule in budget.get("kernels", []):
+        rules.append((re.compile(rule["match"]), parse_gate(rule["gate"])))
+    if default is None and not rules:
+        raise GateSyntaxError("budget file needs a 'default' gate and/or 'kernels' rules")
+    return default, rules
+
+
+def eval_budget(doc: dict, budget: dict) -> tuple[list[dict], list[Clause]]:
+    """Per-kernel gating: first matching kernels-rule wins, else default,
+    else the kernel is exempt. Returns (violations, all clauses used)."""
+    default, rules = parse_budget(budget)
+    used: dict[str, Clause] = {}
+    violations = []
+    for unit in doc["units"]:
+        for k in unit["kernels"]:
+            clauses = None
+            for pat, cl in rules:
+                if pat.search(k["name"]) or pat.search(k["demangled"]):
+                    clauses = cl
+                    break
+            if clauses is None:
+                clauses = default
+            if not clauses:
+                continue
+            for c in clauses:
+                used[str(c)] = c
+                val = _metric_value(k, unit.get("arch"), c)
+                if val is None:
+                    if c.metric in _ACCESS_METRICS and not k.get("access"):
+                        raise GateError(
+                            f"budget metric {c.metric!r} requires access analysis "
+                            "— pass --threads or add 'threads' to the budget file"
+                        )
+                    violations.append({
+                        "kernel": k["demangled"], "unit": unit["label"],
+                        "clause": str(c), "value": None,
+                        "reason": f"metric {c.metric} unavailable",
+                    })
+                elif not _OPS[c.op](val, c.value):
+                    violations.append({
+                        "kernel": k["demangled"], "unit": unit["label"],
+                        "clause": str(c), "value": val,
+                        "reason": f"{c.metric}={val} violates {c}",
+                    })
+    return violations, list(used.values())
+
+
 def eval_gate(doc: dict, clauses: list[Clause]) -> list[dict]:
     # Fail loudly (not with fake violations) when a clause needs access
     # analysis but no kernel has it — the user forgot --threads and the

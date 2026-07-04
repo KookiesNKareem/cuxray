@@ -7,3 +7,5 @@ dist/
 .cache/
 .devct/
 PLAN.md
+dist/
+build/

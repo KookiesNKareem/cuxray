@@ -21,19 +21,30 @@ _RULE_DESC = {
 }
 
 
-def gate_to_sarif(artifact_path: str, clauses, violations: list[dict]) -> dict:
-    rules = [{
-        "id": f"cuxray/{c.metric}",
-        "shortDescription": {"text": _RULE_DESC.get(c.metric, c.metric)},
-        "help": {"text": f"gate clause: {c}"},
-    } for c in clauses]
+def _relativize(path: str, source_root: str | None) -> str:
+    if source_root and path.startswith(source_root):
+        path = path[len(source_root):].lstrip("/")
+    return path
+
+
+def gate_to_sarif(artifact_path: str, clauses, violations: list[dict],
+                  source_root: str | None = None) -> dict:
+    rules_by_id: dict[str, dict] = {}
+    for c in clauses:
+        rules_by_id.setdefault(f"cuxray/{c.metric}", {
+            "id": f"cuxray/{c.metric}",
+            "shortDescription": {"text": _RULE_DESC.get(c.metric, c.metric)},
+            "help": {"text": f"gate clause: {c}"},
+        })
+    rules = list(rules_by_id.values())
     results = []
     for v in violations:
         clause_metric = v["clause"].split("<")[0].split(">")[0].split("=")[0].split("!")[0].strip()
         clause_metric = clause_metric.split("(")[0]
+        uri = _relativize(v.get("file") or artifact_path, source_root)
         loc = {
             "physicalLocation": {
-                "artifactLocation": {"uri": v.get("file") or artifact_path},
+                "artifactLocation": {"uri": uri},
             }
         }
         if v.get("line"):

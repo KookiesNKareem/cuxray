@@ -20,7 +20,7 @@ SAMPLE = json.loads(
 
 @pytest.fixture
 def runner(monkeypatch):
-    monkeypatch.setattr(cli, "_toolchain", lambda: object())
+    monkeypatch.setattr(cli, "_toolchain", lambda *a, **k: object())
     monkeypatch.setattr(cli, "build_report", lambda path, tc, **kw: SAMPLE)
     return CliRunner()
 
@@ -55,7 +55,7 @@ class TestReport:
         assert json.loads(out.read_text())["schema"] == "cuxray.schema/1"
 
     def test_invalid_regex_exit_2(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(cli, "_toolchain", lambda: object())
+        monkeypatch.setattr(cli, "_toolchain", lambda *a, **k: object())
 
         def boom(path, tc, **kw):
             raise re.error("bad regex")
@@ -87,7 +87,7 @@ class TestGate:
         for u in stripped["units"]:
             for k in u["kernels"]:
                 k["access"] = None
-        monkeypatch.setattr(cli, "_toolchain", lambda: object())
+        monkeypatch.setattr(cli, "_toolchain", lambda *a, **k: object())
         monkeypatch.setattr(cli, "build_report", lambda path, tc, **kw: stripped)
         f = tmp_path / "x.cubin"
         f.write_bytes(b"\x7fELF")
@@ -168,3 +168,41 @@ class TestCache:
         # cache bypass → recompute
         report_mod._analyze_unit_cached(unit, tc, False, level="full")
         assert len(calls) == 3
+
+
+class TestBudget:
+    def test_budget_per_kernel_rules(self, runner, tmp_path):
+        f = tmp_path / "x.cubin"
+        f.write_bytes(b"\x7fELF")
+        budget = tmp_path / "b.json"
+        budget.write_text(json.dumps({
+            "default": "spill_instrs==0",
+            "kernels": [
+                {"match": "col_conflict", "gate": "bank_ways<=32"},
+                {"match": "xor_swizzle", "gate": "bank_ways<=1"},
+            ],
+        }))
+        res = runner.invoke(cli.main, ["gate", str(f), "--budget", str(budget)])
+        assert res.exit_code == 0, res.output  # each kernel within its own budget
+
+        strict = tmp_path / "s.json"
+        strict.write_text(json.dumps({
+            "kernels": [{"match": "col_conflict", "gate": "bank_ways<=2"}],
+        }))
+        res = runner.invoke(cli.main, ["gate", str(f), "--budget", str(strict)])
+        assert res.exit_code == 1  # col_conflict is 32-way
+
+    def test_expr_and_budget_mutually_exclusive(self, runner, tmp_path):
+        f = tmp_path / "x.cubin"
+        f.write_bytes(b"\x7fELF")
+        res = runner.invoke(cli.main, ["gate", str(f)])
+        assert res.exit_code == 2
+
+
+class TestBlockDimsStrict:
+    def test_rejects_zero_negative_and_extra_dims(self):
+        for bad in ("0", "-1", "32,0", "32,8,1,9", "2048"):
+            res = CliRunner().invoke(cli.main, [
+                "occupancy", "--arch", "sm_90", "--regs", "32",
+                "--threads", bad])
+            assert res.exit_code == 2, bad
