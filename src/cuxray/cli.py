@@ -17,6 +17,7 @@ from .diffgate import (GateError, GateSyntaxError, diff_reports, eval_gate,
 from .ingest import IngestError
 from .occupancy import compute, find_cliffs, sweep_block_sizes
 from .render import render_diff, render_ls, render_report
+from .sarif import gate_to_sarif
 from .report import build_report, parse_block_dims
 from .toolchain import ToolchainError, resolve
 
@@ -80,10 +81,11 @@ def main(debug):
 @click.argument("path", type=click.Path(exists=True))
 @click.option("--kernel", "kernel_re", default=None, help="regex filter on kernel names")
 @click.option("--json", "as_json", is_flag=True, help="emit JSON")
+@click.option("--no-cache", is_flag=True, help="bypass the on-disk analysis cache")
 @click.option("--output", "-o", default=None, help="write JSON to a file")
-def ls(path, kernel_re, as_json, output):
+def ls(path, kernel_re, as_json, output, no_cache):
     """List kernels and headline resources in an artifact (fast: no disassembly)."""
-    doc = _report_or_die(path, level="resources", kernel_re=kernel_re)
+    doc = _report_or_die(path, level="resources", kernel_re=kernel_re, use_cache=not no_cache)
     _emit(doc, as_json, output, lambda: render_ls(doc, console))
 
 
@@ -101,13 +103,14 @@ def ls(path, kernel_re, as_json, output):
                    "in the binary; applies to all matched kernels)")
 @click.option("--verbose", is_flag=True, help="show toolchain provenance")
 @click.option("--json", "as_json", is_flag=True, help="emit JSON")
+@click.option("--no-cache", is_flag=True, help="bypass the on-disk analysis cache")
 @click.option("--output", "-o", default=None, help="write JSON to a file")
 def report(path, threads, carveout, kernel_re, arch, fast, smem_dynamic,
-           verbose, as_json, output):
+           verbose, as_json, output, no_cache):
     """Full static report: resources, pressure, spills, occupancy, access patterns."""
     doc = _report_or_die(path, threads=threads, carveout_kb=carveout,
                          kernel_re=kernel_re, arch=arch, fast=fast,
-                         smem_dynamic=smem_dynamic)
+                         smem_dynamic=smem_dynamic, use_cache=not no_cache)
 
     def human():
         render_report(doc, console)
@@ -188,12 +191,13 @@ def occupancy(arch, regs, threads, smem, carveout, sweep, as_json, output):
 @click.option("--fail-on-regression", is_flag=True,
               help="exit 1 if any metric moved in the bad direction")
 @click.option("--json", "as_json", is_flag=True)
+@click.option("--no-cache", is_flag=True, help="bypass the on-disk analysis cache")
 @click.option("--output", "-o", default=None, help="write JSON to a file")
 def diff(old, new, threads, kernel_re, fail_on_change, fail_on_regression,
-         as_json, output):
+         as_json, output, no_cache):
     """Compare two artifacts kernel-by-kernel."""
-    do = _report_or_die(old, threads=threads, kernel_re=kernel_re)
-    dn = _report_or_die(new, threads=threads, kernel_re=kernel_re)
+    do = _report_or_die(old, threads=threads, kernel_re=kernel_re, use_cache=not no_cache)
+    dn = _report_or_die(new, threads=threads, kernel_re=kernel_re, use_cache=not no_cache)
     try:
         d = diff_reports(do, dn, kernel_re)
     except ValueError as e:
@@ -216,8 +220,10 @@ def diff(old, new, threads, kernel_re, fail_on_change, fail_on_regression,
 @click.option("--threads", type=str, default=None,
               help="block shape, required for bank_ways/uncoalesced metrics")
 @click.option("--json", "as_json", is_flag=True)
+@click.option("--sarif", default=None, help="write SARIF 2.1.0 to a file (GitHub code scanning)")
+@click.option("--no-cache", is_flag=True, help="bypass the on-disk analysis cache")
 @click.option("--output", "-o", default=None, help="write JSON to a file")
-def gate(path, expr, kernel_re, threads, as_json, output):
+def gate(path, expr, kernel_re, threads, as_json, output, sarif, no_cache):
     """CI gate: exit 1 if EXPR is violated
     (e.g. "spill_instrs==0, regs<=168, bank_ways<=2")."""
     try:
@@ -225,13 +231,17 @@ def gate(path, expr, kernel_re, threads, as_json, output):
     except GateSyntaxError as e:
         err.print(f"[red]gate syntax:[/] {e}")
         sys.exit(2)
-    doc = _report_or_die(path, kernel_re=kernel_re, threads=threads)
+    doc = _report_or_die(path, kernel_re=kernel_re, threads=threads, use_cache=not no_cache)
     try:
         violations = eval_gate(doc, clauses)
     except GateError as e:
         err.print(f"[red]gate error:[/] {e}")
         sys.exit(2)
     result = {"violations": violations, "passed": not violations}
+    if sarif:
+        Path(sarif).write_text(json.dumps(
+            gate_to_sarif(path, clauses, violations), indent=2))
+        console.print(f"[dim]wrote {sarif}[/]")
 
     def human():
         if violations:

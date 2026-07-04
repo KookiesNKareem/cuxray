@@ -154,11 +154,22 @@ def eval_gate(doc: dict, clauses: list[Clause]) -> list[dict]:
                     })
                     continue
                 if not _OPS[c.op](val, c.value):
-                    violations.append({
+                    v = {
                         "kernel": k["demangled"], "unit": unit["label"],
                         "clause": str(c), "value": val,
                         "reason": f"{c.metric}={val} violates {c}",
-                    })
+                    }
+                    # best-effort source location for the worst offender
+                    if c.metric.startswith("spill"):
+                        rows = (k.get("spills") or {}).get("by_line") or []
+                        if rows and rows[0].get("line"):
+                            v["file"], v["line"] = rows[0]["file"], rows[0]["line"]
+                    elif c.metric in _ACCESS_METRICS:
+                        rows = (k.get("access") or {}).get("by_site") or []
+                        bad = [r for r in rows if r["verdict"] in ("conflict", "uncoalesced")]
+                        if bad and bad[0].get("line"):
+                            v["file"], v["line"] = bad[0]["file"], bad[0]["line"]
+                    violations.append(v)
     return violations
 
 

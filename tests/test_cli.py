@@ -123,3 +123,48 @@ class TestOccupancy:
             "--threads", "32,8", "--json"])
         assert res.exit_code == 0
         assert json.loads(res.output)["threads_per_block"] == 256
+
+
+class TestSarif:
+    def test_gate_writes_valid_sarif(self, runner, tmp_path):
+        f = tmp_path / "x.cubin"
+        f.write_bytes(b"\x7fELF")
+        sarif_path = tmp_path / "out.sarif"
+        res = runner.invoke(cli.main, ["gate", str(f), "bank_ways<=1",
+                                       "--sarif", str(sarif_path)])
+        assert res.exit_code == 1  # sample has a conflicted kernel
+        doc = json.loads(sarif_path.read_text())
+        assert doc["version"] == "2.1.0"
+        results = doc["runs"][0]["results"]
+        assert results and results[0]["ruleId"] == "cuxray/bank_ways"
+        assert results[0]["level"] == "error"
+
+
+class TestCache:
+    def test_cache_roundtrip(self, tmp_path, monkeypatch):
+        from cuxray import report as report_mod
+        monkeypatch.setenv("CUXRAY_CACHE", str(tmp_path))
+        calls = []
+
+        def fake_analyze(unit, tc, **kw):
+            calls.append(1)
+            return {"label": unit.label, "arch": "sm_90", "cubin_sha256": "x",
+                    "kernels": []}
+        monkeypatch.setattr(report_mod, "analyze_unit", fake_analyze)
+
+        from cuxray.ingest import CubinUnit
+        cub = tmp_path / "k.cubin"
+        cub.write_bytes(b"\x7fELF" + b"\0" * 64)
+        unit = CubinUnit(cubin=cub, label="k.cubin", source=cub)
+        tc = object.__new__(type("T", (), {"nvdisasm": "nd", "cuobjdump": "co"}))
+
+        d1 = report_mod._analyze_unit_cached(unit, tc, True, level="full")
+        d2 = report_mod._analyze_unit_cached(unit, tc, True, level="full")
+        assert len(calls) == 1                      # second hit came from cache
+        assert d2.get("from_cache") is True
+        # different params → miss
+        report_mod._analyze_unit_cached(unit, tc, True, level="resources")
+        assert len(calls) == 2
+        # cache bypass → recompute
+        report_mod._analyze_unit_cached(unit, tc, False, level="full")
+        assert len(calls) == 3

@@ -25,6 +25,7 @@ Schema shape (frozen at v0.1 — additive changes only after that):
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 import shutil
 import subprocess
@@ -239,14 +240,53 @@ def analyze_unit(
     }
 
 
-def _analyze_units(units, tc, **kw) -> list[dict]:
+def _cache_key(unit: CubinUnit, tc: Toolchain, kw: dict) -> str:
+    """Content-addressed: cubin bytes + analyzer version + toolchain versions
+    + every analysis parameter. Any change to inputs misses the cache."""
+    h = hashlib.sha256()
+    h.update(unit.cubin.read_bytes())
+    h.update(__version__.encode())
+    for t in ("nvdisasm", "cuobjdump"):
+        h.update(str(getattr(tc, t, "")).encode())
+    h.update(json.dumps(kw, sort_keys=True, default=str).encode())
+    return h.hexdigest()
+
+
+def _analyze_unit_cached(unit, tc, use_cache: bool, **kw) -> dict:
+    if not use_cache:
+        return analyze_unit(unit, tc, **kw)
+    from .toolchain import cache_dir
+    cdir = cache_dir() / "reports"
+    key = _cache_key(unit, tc, kw)
+    path = cdir / f"{key}.json"
+    if path.exists():
+        try:
+            doc = json.loads(path.read_text())
+            doc["from_cache"] = True
+            return doc
+        except (json.JSONDecodeError, OSError):
+            pass  # corrupt cache entry: recompute
+    doc = analyze_unit(unit, tc, **kw)
+    try:
+        cdir.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(doc))
+        tmp.rename(path)
+    except OSError:
+        pass  # cache is best-effort
+    return doc
+
+
+def _analyze_units(units, tc, use_cache: bool = True, **kw) -> list[dict]:
     """Analyze units in parallel — the work is subprocess-bound (nvdisasm),
-    so threads give near-linear speedup on multi-cubin artifacts."""
+    so threads give near-linear speedup on multi-cubin artifacts. Results are
+    cached on disk keyed by content + config + versions."""
     if len(units) == 1:
-        return [analyze_unit(units[0], tc, **kw)]
+        return [_analyze_unit_cached(units[0], tc, use_cache, **kw)]
     import concurrent.futures as cf
     with cf.ThreadPoolExecutor(max_workers=min(8, len(units))) as ex:
-        return list(ex.map(lambda u: analyze_unit(u, tc, **kw), units))
+        return list(ex.map(
+            lambda u: _analyze_unit_cached(u, tc, use_cache, **kw), units))
 
 
 def build_report(
@@ -259,6 +299,7 @@ def build_report(
     level: str = "full",
     fast: bool = False,
     smem_dynamic: Optional[int] = None,
+    use_cache: bool = True,
 ) -> dict:
     import tempfile
 
@@ -285,7 +326,8 @@ def build_report(
             "artifact": {"path": str(p), "sha256": _sha256(p) if p.is_file() else None},
             "toolchain": tc.describe(),
             "units": _analyze_units(
-                units, tc, threads=total_threads, carveout_kb=carveout_kb,
+                units, tc, use_cache=use_cache,
+                threads=total_threads, carveout_kb=carveout_kb,
                 kernel_re=kernel_re, level=level, fast=fast,
                 smem_dynamic=smem_dynamic, block_dims=block_dims,
             ),

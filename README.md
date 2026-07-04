@@ -124,6 +124,21 @@ eliminated every spill, at the cost of 16.7 points of occupancy.
 
 ### Gate resource regressions in CI
 
+As a GitHub Action (violations can annotate PRs via SARIF):
+
+```yaml
+- uses: KookiesNKareem/cuxray@main
+  with:
+    path: build/kernels.so
+    gate: "spill_instrs==0, regs<=168, bank_ways<=2"
+    threads: "256"
+    sarif: cuxray.sarif
+- uses: github/codeql-action/upload-sarif@v3
+  with: { sarif_file: cuxray.sarif }
+```
+
+Or by hand:
+
 ```console
 $ cuxray gate kernels.so "spill_instrs==0, regs<=168, occupancy(threads=256)>=25"
 ✗ moe_gemm (kernels.so): spill_instrs=24 violates spill_instrs==0
@@ -157,6 +172,9 @@ Add `--sweep` for a block-size sweep, `--smem N` for shared memory.
 Supported architectures: compute capability 7.5 through 12.x (Turing,
 Ampere, Ada, Hopper, Blackwell — including `a`-variant cubins like
 `sm_120a`).
+
+Repeated runs are fast: analysis results are cached on disk keyed by cubin
+content + toolchain + configuration (`--no-cache` bypasses).
 
 ## How it works
 
