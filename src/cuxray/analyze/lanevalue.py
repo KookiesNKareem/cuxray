@@ -48,10 +48,11 @@ VARYING = "varying"
 class Value:
     kind: str
     vec: Optional[tuple[int, ...]] = None  # per-lane values, len 32
+    reason: Optional[str] = None           # why VARYING (attribution only)
 
     def __repr__(self) -> str:
         if self.kind == VARYING:
-            return "VARYING"
+            return f"VARYING({self.reason})" if self.reason else "VARYING"
         head = ",".join(str(v) for v in self.vec[:4])
         return f"{self.kind.upper()}[{head},...]"
 
@@ -70,8 +71,15 @@ class Value:
         return self.kind != VARYING and len(set(self.vec)) == 1
 
 
-def varying() -> Value:
-    return Value(VARYING)
+def varying(reason: Optional[str] = None) -> Value:
+    return Value(VARYING, reason=reason)
+
+
+def _first_reason(*vals: Value) -> Optional[str]:
+    for v in vals:
+        if v.kind == VARYING and v.reason:
+            return v.reason
+    return None
 
 
 def const(c: int) -> Value:
@@ -106,7 +114,7 @@ def _lift(a: Value, b: Value) -> Optional[str]:
 def add(a: Value, b: Value) -> Value:
     kind = _lift(a, b)
     if kind is None:
-        return varying()
+        return varying(_first_reason(a, b))
     # uniform-unknown parts add to a single uniform-unknown part
     return Value(kind, tuple((x + y) & _MASK32 for x, y in zip(a.vec, b.vec)))
 
@@ -114,14 +122,14 @@ def add(a: Value, b: Value) -> Value:
 def sub(a: Value, b: Value) -> Value:
     kind = _lift(a, b)
     if kind is None:
-        return varying()
+        return varying(_first_reason(a, b))
     # (u1+v1)-(u2+v2): uniform parts collapse to one unknown uniform; exact vecs subtract
     return Value(kind, tuple((x - y) & _MASK32 for x, y in zip(a.vec, b.vec)))
 
 
 def mul(a: Value, b: Value) -> Value:
     if a.kind == VARYING or b.kind == VARYING:
-        return varying()
+        return varying(_first_reason(a, b))
     if a.kind == PURE and b.kind == PURE:
         return Value(PURE, tuple((x * y) & _MASK32 for x, y in zip(a.vec, b.vec)))
     # MIXED * scalar-const is linear: (u + v)*c = u*c + v*c
@@ -132,12 +140,12 @@ def mul(a: Value, b: Value) -> Value:
     # uniform * uniform stays uniform
     if a.is_uniform and b.is_uniform:
         return uniform_unknown()
-    return varying()
+    return varying("nonlinear lane arithmetic")
 
 
 def shl(a: Value, b: Value) -> Value:
     if a.kind == VARYING or b.kind == VARYING:
-        return varying()
+        return varying(_first_reason(a, b))
     if a.kind == PURE and b.kind == PURE:
         return Value(PURE, tuple((x << (y & 31)) & _MASK32 for x, y in zip(a.vec, b.vec)))
     if a.kind == MIXED and b.is_scalar:  # linear
@@ -145,7 +153,7 @@ def shl(a: Value, b: Value) -> Value:
         return Value(MIXED, tuple((x << c) & _MASK32 for x in a.vec))
     if a.is_uniform and b.is_uniform:
         return uniform_unknown()
-    return varying()
+    return varying("nonlinear lane arithmetic")
 
 
 def _nonlinear(op):
@@ -154,7 +162,7 @@ def _nonlinear(op):
             return Value(PURE, tuple(op(x, y) & _MASK32 for x, y in zip(a.vec, b.vec)))
         if a.kind != VARYING and b.kind != VARYING and a.is_uniform and b.is_uniform:
             return uniform_unknown()
-        return varying()
+        return varying(_first_reason(a, b) or "nonlinear lane arithmetic")
     return f
 
 
@@ -177,13 +185,16 @@ def lop3(a: Value, b: Value, c: Value, lut: int) -> Value:
         return Value(PURE, tuple(out))
     if all(v.kind != VARYING and v.is_uniform for v in (a, b, c)):
         return uniform_unknown()
-    return varying()
+    return varying(_first_reason(a, b, c) or "nonlinear lane arithmetic")
 
 
 def join(a: Value, b: Value) -> Value:
-    """Control-flow merge."""
-    if a.kind == VARYING or b.kind == VARYING:
-        return varying()
+    """Control-flow merge. Stable under repetition: a VARYING left operand
+    is returned as-is (reason preserved) so fixpoint iteration converges."""
+    if a.kind == VARYING:
+        return a
+    if b.kind == VARYING:
+        return varying(b.reason or "control-flow merge")
     if a.vec == b.vec:
         return Value(MIXED, a.vec) if MIXED in (a.kind, b.kind) else a
     # Same lane pattern up to a uniform shift is still MIXED with that pattern
@@ -191,4 +202,4 @@ def join(a: Value, b: Value) -> Value:
     if all(((x - y) & _MASK32) == d0 for x, y in zip(a.vec, b.vec)):
         base = tuple((x - a.vec[0]) & _MASK32 for x in a.vec)
         return Value(MIXED, base)
-    return varying()
+    return varying("control-flow merge")

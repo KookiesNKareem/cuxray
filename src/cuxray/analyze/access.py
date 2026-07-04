@@ -29,11 +29,9 @@ from typing import Optional
 
 from ..parse.sass import Function, Instruction
 from . import lanevalue as lv
-from .dataflow import State, analyze
+from .dataflow import State, addr_value, analyze, memory_operand
 
 _WIDTH = {"128": 16, "64": 8, "32": 4, "U8": 1, "S8": 1, "U16": 2, "S16": 2}
-_SCALE = re.compile(r"\.X(\d+)$")
-_BRACKET = re.compile(r"\[([^\]]*)\]")
 
 
 def _op_width(opcode: str) -> int:
@@ -41,47 +39,6 @@ def _op_width(opcode: str) -> int:
         if part in _WIDTH:
             return _WIDTH[part]
     return 4
-
-
-def _addr_value(mem: str, st: State) -> lv.Value:
-    """Evaluate the inside of a [...] memory operand to a lane-value."""
-    total = lv.const(0)
-    for term in re.split(r"(?<!e)\+", mem.replace(" ", "")):  # split on +
-        if not term:
-            continue
-        neg = term.startswith("-")
-        term = term.lstrip("-")
-        scale = 1
-        m = _SCALE.search(term.split("+")[0])
-        base = term
-        for suffix in (".X4", ".X8", ".X16", ".X32", ".64", ".U32"):
-            base = base.replace(suffix, "")
-        if m:
-            scale = int(m.group(1))
-        if re.match(r"^(R\d+|RZ|UR\d+|URZ)$", base):
-            v = st.get(base)
-            if scale != 1:
-                v = lv.mul(v, lv.const(scale))
-        elif re.match(r"^0x[0-9a-fA-F]+$|^\d+$", base):
-            v = lv.const(int(base, 0))
-        else:
-            return lv.varying()
-        if neg:
-            v = lv.sub(lv.const(0), v)
-        total = lv.add(total, v)
-    return total
-
-
-def _memory_operand(instr: Instruction) -> Optional[str]:
-    groups = _BRACKET.findall(instr.operands)
-    if not groups:
-        return None
-    # desc[UR4][R2.64] → the descriptor bracket contains only a UR; take the
-    # last bracket group that references an R register or immediate.
-    for g in reversed(groups):
-        if re.search(r"R\d+|RZ|0x", g):
-            return g
-    return groups[-1]
 
 
 def bank_conflict_ways(vec: tuple[int, ...], width: int) -> tuple[int, bool]:
@@ -121,6 +78,37 @@ def sector_count(vec: tuple[int, ...], width: int) -> tuple[int, int]:
                 sectors.add((base + a + k) >> 5)
         counts.append(len(sectors))
     return max(counts), min(counts)
+
+
+def _verified_fixes(vec: tuple[int, ...], width: int) -> list[str]:
+    """Candidate conflict fixes, SIMULATED before being suggested — only
+    fixes that verify clean under the same bank model are returned."""
+    fixes: list[str] = []
+    s = _stride(vec)
+    if s and s > 0:
+        # Padding: classic row-pitch fix. vec = lane * s → lane * (s + pad)
+        for pad in (4, 8, 12):
+            padded = tuple((a // s) * (s + pad) + (a % s) for a in vec)
+            ways, _ = bank_conflict_ways(padded, width)
+            if ways == 1:
+                fixes.append(
+                    f"pad the {s} B row pitch to {s + pad} B — verified clean"
+                )
+                break
+    # XOR swizzle of the word index (works for power-of-two patterns and
+    # doesn't cost shared memory)
+    for mask in (7, 15, 31):
+        swizzled = tuple(
+            ((((a >> 2) ^ ((a >> 7) & mask)) << 2) | (a & 3)) for a in vec
+        )
+        ways, _ = bank_conflict_ways(swizzled, width)
+        if ways == 1:
+            fixes.append(
+                f"XOR-swizzle the word index: idx ^ ((idx >> 5) & {mask}) "
+                "— verified clean, costs no shared memory"
+            )
+            break
+    return fixes
 
 
 def _stride(vec: tuple[int, ...]) -> Optional[int]:
@@ -165,11 +153,11 @@ def analyze_accesses(func: Function, block_dims: tuple[int, int, int],
             "width": _op_width(i.opcode), "file": i.file, "line": i.line,
             "block": i.block, "loop_depth": loop_depth.get(i.block or "", 0),
         }
-        mem = _memory_operand(i)
-        val = _addr_value(mem, pre.get(i.addr, State())) if mem else lv.varying()
+        mem = memory_operand(i)
+        val = addr_value(mem, pre.get(i.addr, State())) if mem else lv.varying()
         if val.kind == lv.VARYING:
             entry["verdict"] = "unknown"
-            entry["reason"] = "address is data-dependent or flows through unmodeled instructions"
+            entry["reason"] = val.reason or "address not traceable"
             unanalyzed.append(entry)
             continue
 
@@ -180,6 +168,8 @@ def analyze_accesses(func: Function, block_dims: tuple[int, int, int],
             entry["verdict"] = "conflict" if ways > 1 else "clean"
             entry["conflict_ways"] = ways
             entry["broadcast"] = bcast
+            if ways > 1:
+                entry["fixes"] = _verified_fixes(vec, entry["width"])
         else:
             worst, best = sector_count(vec, entry["width"])
             ideal = math.ceil(32 * entry["width"] / 32)
@@ -202,7 +192,10 @@ def analyze_accesses(func: Function, block_dims: tuple[int, int, int],
             "file": a["file"], "line": a["line"], "space": a["space"],
             "verdict": a["verdict"], "count": 0, "loop_depth": 0,
             "conflict_ways": 1, "efficiency_pct": None, "stride": a.get("stride"),
+            "fixes": [],
         })
+        if a.get("fixes") and not s["fixes"]:
+            s["fixes"] = a["fixes"]
         s["count"] += 1
         s["loop_depth"] = max(s["loop_depth"], a["loop_depth"])
         if "conflict_ways" in a:

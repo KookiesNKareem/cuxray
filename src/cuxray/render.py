@@ -113,6 +113,9 @@ def _render_kernel(k: dict, console: Console) -> None:
             console.print(f"    [red]access issues:[/] {acc['conflicted_shared_accesses']} "
                           f"conflicted shared · {acc['uncoalesced_global_accesses']} uncoalesced global")
             console.print(t)
+            for s in bad[:3]:
+                for fix in s.get("fixes") or []:
+                    console.print(f"      [cyan]fix:[/] {fix}")
         else:
             console.print(
                 f"    [green]access patterns clean[/] "

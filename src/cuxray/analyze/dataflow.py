@@ -28,6 +28,48 @@ from . import lanevalue as lv
 
 _REG = re.compile(r"^-?~?\|?(R\d+|RZ|UR\d+|URZ|PT|!?P\d+)\|?(\.\w+)*$")
 _IMM = re.compile(r"^-?0x[0-9a-fA-F]+$|^-?\d+$")
+_SCALE = re.compile(r"\.X(\d+)$")
+_BRACKET = re.compile(r"\[([^\]]*)\]")
+
+
+def memory_operand(instr: Instruction) -> Optional[str]:
+    """The inside of the address bracket, skipping TMA/LDG descriptor brackets."""
+    groups = _BRACKET.findall(instr.operands)
+    if not groups:
+        return None
+    for g in reversed(groups):
+        if re.search(r"R\d+|RZ|0x", g):
+            return g
+    return groups[-1]
+
+
+def addr_value(mem: str, st: "State") -> lv.Value:
+    """Evaluate the inside of a [...] memory operand to a lane-value."""
+    total = lv.const(0)
+    for term in re.split(r"(?<!e)\+", mem.replace(" ", "")):
+        if not term:
+            continue
+        neg = term.startswith("-")
+        term = term.lstrip("-")
+        scale = 1
+        m = _SCALE.search(term.split("+")[0])
+        base = term
+        for suffix in (".X4", ".X8", ".X16", ".X32", ".64", ".U32"):
+            base = base.replace(suffix, "")
+        if m:
+            scale = int(m.group(1))
+        if re.match(r"^(R\d+|RZ|UR\d+|URZ)$", base):
+            v = st.get(base)
+            if scale != 1:
+                v = lv.mul(v, lv.const(scale))
+        elif re.match(r"^0x[0-9a-fA-F]+$|^\d+$", base):
+            v = lv.const(int(base, 0))
+        else:
+            return lv.varying(f"unsupported address term {base[:20]!r}")
+        if neg:
+            v = lv.sub(lv.const(0), v)
+        total = lv.add(total, v)
+    return total
 
 
 def _split_operands(text: str) -> list[str]:
@@ -134,6 +176,8 @@ def step(instr: Instruction, st: State, tids: dict[str, lv.Value]) -> None:
             return
         if instr.predicate:  # predicated write: merge with previous value
             val = lv.join(st.get(d), val)
+            if val.kind == lv.VARYING and not val.reason:
+                val = lv.varying("predicated write")
         st.set(d, val)
 
     if base in ("S2R", "S2UR"):
@@ -239,18 +283,29 @@ def step(instr: Instruction, st: State, tids: dict[str, lv.Value]) -> None:
         return
 
     if base == "PRMT":
-        assign(lv.varying())
+        assign(lv.varying("unmodeled PRMT"))
         return
 
     if base.startswith(("LD", "ATOM", "RED", "TLD", "SULD")):
-        # any load: data-dependent result
         if d:
-            assign(lv.varying())
+            if base.startswith("LD"):
+                # A load at a warp-uniform address returns identical data to
+                # every lane — provably uniform. (Atomics excluded: serialized
+                # RMW returns different pre-values per lane even at one address.)
+                mem = memory_operand(instr)
+                addr = addr_value(mem, st) if mem else lv.varying()
+                if addr.kind != lv.VARYING and addr.is_uniform:
+                    val = lv.uniform_unknown()
+                else:
+                    val = lv.varying("data-dependent (load result)")
+            else:
+                val = lv.varying("data-dependent (atomic result)")
+            assign(val)
             if ".64" in op:
-                st.set(_next_reg(d), lv.varying())
+                st.set(_next_reg(d), val)
             elif ".128" in op:
                 for i in range(1, 4):
-                    st.set(_next_reg(d, i), lv.varying())
+                    st.set(_next_reg(d, i), val)
         return
 
     if base.startswith(("ST", "BRA", "EXIT", "BAR", "NOP", "ISETP", "USETP",
@@ -260,7 +315,7 @@ def step(instr: Instruction, st: State, tids: dict[str, lv.Value]) -> None:
 
     # Anything else that names a destination register: unknown semantics
     if d is not None:
-        assign(lv.varying())
+        assign(lv.varying(f"unmodeled {base}"))
 
 
 def _next_reg(reg: str, offset: int = 1) -> str:
