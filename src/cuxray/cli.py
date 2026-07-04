@@ -168,16 +168,5 @@ def gate(path, expr, kernel_re, as_json):
     sys.exit(1 if violations else 0)
 
 
-@main.command()
-def mcp():
-    """Run the MCP server (stdio) exposing cuxray to agents."""
-    try:
-        from .mcp_server import run
-    except ImportError:
-        err.print("[red]MCP extra not installed:[/] pip install 'cuxray[mcp]'")
-        sys.exit(2)
-    run()
-
-
 if __name__ == "__main__":
     main()

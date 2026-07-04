@@ -32,8 +32,9 @@ archive on first use (x86_64 and aarch64).
 - **Profiling needs privileged GPUs.** Rented and containerized GPUs often
   can't run Nsight Compute at all (`ERR_NVGPU_CTRPERM`). cuxray's entire
   analysis needs no GPU — it works where you compile, not where you run.
-- **Agents need structured feedback.** Every command has `--json` (stable,
-  versioned schema) and there's a built-in MCP server (`cuxray mcp`).
+- **Agents need structured feedback.** Every command has `--json` with a
+  stable, versioned schema, and `gate` communicates through exit codes —
+  script it, CI it, or hand it to a coding agent as a documented CLI.
 
 ## What it reports
 
@@ -123,16 +124,6 @@ Add `--sweep` for a block-size sweep, `--smem N` for shared memory.
 Supported architectures: compute capability 7.5 through 12.x (Turing,
 Ampere, Ada, Hopper, Blackwell — including `a`-variant cubins like
 `sm_120a`).
-
-## MCP server (for coding agents)
-
-```console
-$ pip install 'cuxray[mcp]'
-$ claude mcp add cuxray -- cuxray mcp
-```
-
-Tools: `report`, `diff`, `gate`, `occupancy_whatif`, `list_kernels` — same
-JSON documents as the CLI.
 
 ## How it works
 

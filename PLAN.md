@@ -20,7 +20,7 @@ sm_120 decode validation against NCU on our box.
 
 - **Name:** cuxray. **License:** Apache-2.0. **Language:** Python 3.10+
   (ecosystem, MCP, agents; parsing perf is fine — stream, don't slurp).
-- **v0.1 = Layer A only.** Consumer: human CLI + `--json` + MCP server.
+- **v0.1 = Layer A only.** Consumer: well-documented CLI + `--json` (MCP + skill removed 2026-07-04 — agents drive the CLI).
 - **Repo:** github.com/<kareem>/cuxray (public at v0.1 tag, not before).
 
 ## v0.1 CLI surface
@@ -31,7 +31,6 @@ cuxray report <artifact> [--kernel RE] [--threads N] [--json] [--sass]
 cuxray occupancy <artifact> --threads N [--what-if regs=-8] [--sweep] [--json]
 cuxray diff <old> <new> [--kernel RE] [--json]
 cuxray gate <artifact> "spills==0, regs<=168, occupancy(threads=256)>=25"
-cuxray mcp                                    # stdio MCP server
 ```
 
 `<artifact>` = .cubin | ELF (exe/.so/torch ext → cuobjdump extract, iterate,
@@ -73,13 +72,6 @@ linux-sbsa/aarch64, pinned versions + sha256, cached in `~/.cache/cuxray/`,
 EULA notice on first fetch). Verified available through CUDA 13.3; conda-forge
 mirror as fallback. No macOS binaries exist → macOS host = clear error
 pointing at container/CI path.
-
-## MCP server (day 1)
-
-Tools: `report`, `diff`, `occupancy_whatif`, `list_kernels` — thin wrappers
-returning schema JSON. Agent story = same as CI story: analyze → edit → diff.
-Ship `.claude/skills/cuxray` usage skill in-repo (pattern proven by
-mit-han-lab's ncu-report-skill, 139★).
 
 ## Testing / CI (GPU-free by construction)
 
