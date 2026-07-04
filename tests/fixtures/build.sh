@@ -25,6 +25,7 @@ for arch in "${ARCHES[@]}"; do
     compile tiled_matmul  "$arch"
     compile launch_bounds "$arch"
     compile spill         "$arch" -maxrregcount 32
+    compile bank_conflict "$arch"
 done
 
 # Multi-arch host object (fatbin embedded in a host ELF) for extraction tests
@@ -36,7 +37,7 @@ cuobjdump --list-elf "$BIN/multiarch.o" > "$REC/listelf.multiarch.txt"
 
 # Recorded nvdisasm outputs (parser fixtures) for representative kernels
 for arch in "${ARCHES[@]}"; do
-    for name in saxpy spill tiled_matmul; do
+    for name in saxpy spill tiled_matmul bank_conflict; do
         cub="$BIN/${name}.${arch}.cubin"
         nvdisasm -c -gi "$cub"        > "$REC/nvdisasm_gi.${name}.${arch}.txt"
         nvdisasm -c -plr -gi "$cub"   > "$REC/nvdisasm_plr.${name}.${arch}.txt"
