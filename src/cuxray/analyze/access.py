@@ -15,9 +15,11 @@ uniform base CAN change sector counts by boundary straddle, so we evaluate
 all base offsets mod 32 and report the worst case, flagging when it differs
 from the best.
 
-Accesses we do NOT model in this version (listed as unanalyzed, with reason,
-never guessed): LDSM/STSM matrix loads, LDGSTS/TMA async copies, generic
-LD/ST (address space unknown), LDL/STL (local — covered by the spill map).
+LDSM/STSM matrix accesses use the 8-lane phase-group model (16 B rows);
+LDGSTS async copies are analyzed on both faces (global coalescing + shared
+banks). Still unmodeled, listed with reasons and never guessed: TMA bulk
+copies (hardware-managed), generic LD/ST (address space unknown), LDL/STL
+(local — covered by the spill map).
 """
 
 from __future__ import annotations
@@ -29,7 +31,7 @@ from typing import Optional
 
 from ..parse.sass import Function, Instruction
 from . import lanevalue as lv
-from .dataflow import State, addr_value, analyze, memory_operand
+from .dataflow import State, addr_value, analyze_ex, memory_operand
 
 _WIDTH = {"128": 16, "64": 8, "32": 4, "U8": 1, "S8": 1, "U16": 2, "S16": 2}
 
@@ -130,7 +132,7 @@ _SKIP_REASON = {
 def analyze_accesses(func: Function, block_dims: tuple[int, int, int],
                      loop_depth: Optional[dict[str, int]] = None) -> dict:
     loop_depth = loop_depth or {}
-    pre = analyze(func, block_dims)
+    pre, flow = analyze_ex(func, block_dims)
     accesses, unanalyzed = [], []
 
     def make_entry(i, space, width=None):
@@ -259,6 +261,8 @@ def analyze_accesses(func: Function, block_dims: tuple[int, int, int],
 
     return {
         "block_dims": list(block_dims),
+        "dataflow_converged": flow["converged"],
+        "unreached_blocks": flow["unreached_blocks"],
         "accesses": accesses,
         "by_site": by_site,
         "unanalyzed": unanalyzed,

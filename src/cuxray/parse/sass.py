@@ -27,7 +27,7 @@ _INSTR = re.compile(
 )
 _LABEL = re.compile(r"^([.\w$]+):\s*(?://.*)?$")
 _TARGET = re.compile(r"^\s*\.target\s+(\S+)")
-_PLR_COUNT = re.compile(r"^\s*(\d+)")
+_PLR_COUNT = re.compile(r"(\d+)")  # search, not match: tolerant of leading glyph drift
 
 
 @dataclass
@@ -132,7 +132,7 @@ def parse_plr(text: str) -> dict[str, dict[int, tuple[int, int, int]]]:
             ann = raw.split("//", 1)[1]
             groups = [g for g in ann.split("|") if g.strip(" +-.─")]
             for i, g in enumerate(groups[:3]):
-                cm = _PLR_COUNT.match(g)
+                cm = _PLR_COUNT.search(g)
                 counts[i] = int(cm.group(1)) if cm else 0
         cur[addr] = (counts[0], counts[1], counts[2])
     return out

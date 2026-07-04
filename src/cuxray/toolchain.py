@@ -144,7 +144,16 @@ def _fetch(quiet: bool = False) -> Toolchain:
     bin_dir.mkdir(exist_ok=True)
     with tempfile.TemporaryDirectory(dir=root) as td:
         for comp in COMPONENTS:
-            entry = manifest[comp][plat]
+            try:
+                entry = manifest[comp][plat]
+                entry["relative_path"], entry["sha256"]
+            except (KeyError, TypeError):
+                raise ToolchainError(
+                    f"redist manifest has no {comp}/{plat} entry — toolkit "
+                    f"version {REDIST_VERSION} may be unsupported or the "
+                    "manifest schema changed; pin CUXRAY_REDIST_VERSION to a "
+                    "known-good version (e.g. 13.3.1)"
+                )
             url = REDIST_BASE + entry["relative_path"]
             archive = Path(td) / Path(entry["relative_path"]).name
             if not quiet:
@@ -159,7 +168,10 @@ def _fetch(quiet: bool = False) -> Toolchain:
                     base = os.path.basename(member.name)
                     if member.isfile() and base in TOOLS and "/bin/" in member.name:
                         member.name = base
-                        tar.extract(member, bin_dir, filter="data")
+                        try:
+                            tar.extract(member, bin_dir, filter="data")
+                        except TypeError:  # Python < 3.10.7 lacks filter=
+                            tar.extract(member, bin_dir)
                         (bin_dir / base).chmod(0o755)
     (root / "EULA_NOTICE.txt").write_text(EULA_NOTE + "\n")
     if not quiet:

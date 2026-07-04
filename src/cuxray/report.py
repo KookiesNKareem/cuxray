@@ -168,6 +168,12 @@ def analyze_unit(
                     "for file:line attribution"
                 )
             k["pressure"] = pressure(func)
+            if (not fast and func.instructions
+                    and not k["pressure"].get("available")):
+                notes.append(
+                    "liveness output could not be parsed — possible nvdisasm "
+                    "format drift; register-pressure data unavailable"
+                )
             depths = cfg.get(name).loop_depth if name in cfg else {}
             k["spills"] = spill_map(func, depths)
             realloc = sass.uses_register_reallocation(func)
@@ -228,9 +234,19 @@ def analyze_unit(
     return {
         "label": unit.label,
         "arch": arch,
-        "cubin_sha256": _sha256(unit.cubin),
+        "cubin_sha256": hashlib.sha256(data).hexdigest(),
         "kernels": kernels,
     }
+
+
+def _analyze_units(units, tc, **kw) -> list[dict]:
+    """Analyze units in parallel — the work is subprocess-bound (nvdisasm),
+    so threads give near-linear speedup on multi-cubin artifacts."""
+    if len(units) == 1:
+        return [analyze_unit(units[0], tc, **kw)]
+    import concurrent.futures as cf
+    with cf.ThreadPoolExecutor(max_workers=min(8, len(units))) as ex:
+        return list(ex.map(lambda u: analyze_unit(u, tc, **kw), units))
 
 
 def build_report(
@@ -246,6 +262,8 @@ def build_report(
 ) -> dict:
     import tempfile
 
+    if kernel_re:
+        re.compile(kernel_re)  # validate once, fail fast with re.error
     block_dims, total_threads = parse_block_dims(threads)
     p = Path(path)
     workdir_ctx = tempfile.TemporaryDirectory(prefix="cuxray_")
@@ -266,12 +284,11 @@ def build_report(
             "cuxray_version": __version__,
             "artifact": {"path": str(p), "sha256": _sha256(p) if p.is_file() else None},
             "toolchain": tc.describe(),
-            "units": [
-                analyze_unit(u, tc, threads=total_threads, carveout_kb=carveout_kb,
-                             kernel_re=kernel_re, level=level, fast=fast,
-                             smem_dynamic=smem_dynamic, block_dims=block_dims)
-                for u in units
-            ],
+            "units": _analyze_units(
+                units, tc, threads=total_threads, carveout_kb=carveout_kb,
+                kernel_re=kernel_re, level=level, fast=fast,
+                smem_dynamic=smem_dynamic, block_dims=block_dims,
+            ),
         }
     finally:
         workdir_ctx.cleanup()

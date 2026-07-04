@@ -24,7 +24,12 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0"]
+dev = ["pytest>=8.0", "jsonschema>=4.0"]
+
+[project.urls]
+Homepage = "https://github.com/KookiesNKareem/cuxray"
+Repository = "https://github.com/KookiesNKareem/cuxray"
+Issues = "https://github.com/KookiesNKareem/cuxray/issues"
 
 [project.scripts]
 cuxray = "cuxray.cli:main"

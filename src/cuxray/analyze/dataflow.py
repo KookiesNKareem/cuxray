@@ -331,6 +331,14 @@ def analyze(func: Function, block_dims: tuple[int, int, int],
             max_iters: int = 8) -> dict[int, State]:
     """Fixpoint dataflow. Returns the state *before* each instruction,
     keyed by address."""
+    pre, _info = analyze_ex(func, block_dims, max_iters)
+    return pre
+
+
+def analyze_ex(func: Function, block_dims: tuple[int, int, int],
+               max_iters: int = 8) -> tuple[dict[int, State], dict]:
+    """Like analyze(), plus {"converged": bool, "unreached_blocks": int} so
+    callers can surface incomplete analysis instead of silently degrading."""
     tids = lv.tid_vectors(block_dims)
 
     # Partition instructions into blocks by label (matches -cfg node names)
@@ -351,6 +359,7 @@ def analyze(func: Function, block_dims: tuple[int, int, int],
     entry[0] = State()
     pre: dict[int, State] = {}
 
+    converged = False
     for _ in range(max_iters):
         changed = False
         for bi, insns in enumerate(blocks):
@@ -379,5 +388,7 @@ def analyze(func: Function, block_dims: tuple[int, int, int],
                 elif entry[s].join_with(st):
                     changed = True
         if not changed:
+            converged = True
             break
-    return pre
+    unreached = sum(1 for e in entry if e is None)
+    return pre, {"converged": converged, "unreached_blocks": unreached}

@@ -1,0 +1,888 @@
+{
+  "schema": "cuxray.schema/1",
+  "cuxray_version": "0.1.0",
+  "artifact": {
+    "path": "/work/tests/fixtures/bin/bank_conflict.sm_120a.cubin",
+    "sha256": "55ba4e003616fb01f321633415c4c2f54f5be74a948cfad218080f4182046e92"
+  },
+  "toolchain": {
+    "origin": "path",
+    "nvdisasm": {
+      "path": "/work/.devct/bin/nvdisasm",
+      "version": "Build cuda_13.3.r13.3/compiler.38244171_0"
+    },
+    "cuobjdump": {
+      "path": "/work/.devct/bin/cuobjdump",
+      "version": "Build cuda_13.3.r13.3/compiler.38244171_0"
+    },
+    "ptxas": {
+      "path": "/work/.devct/bin/ptxas",
+      "version": "Build cuda_13.3.r13.3/compiler.38244171_0"
+    }
+  },
+  "units": [
+    {
+      "label": "bank_conflict.sm_120a.cubin",
+      "arch": "sm_120a",
+      "cubin_sha256": "55ba4e003616fb01f321633415c4c2f54f5be74a948cfad218080f4182046e92",
+      "kernels": [
+        {
+          "name": "_Z11xor_swizzlePKfPfi",
+          "demangled": "xor_swizzle(float const*, float*, int)",
+          "resources": {
+            "regs": 47,
+            "stack_frame": 0,
+            "shared_section": 5120,
+            "smem_static": 4096,
+            "local": 0,
+            "constant": 916
+          },
+          "pressure": {
+            "available": true,
+            "peak": {
+              "live_gpr": 43,
+              "addr": 752,
+              "file": "/work/tests/fixtures/src/bank_conflict.cu",
+              "line": 38,
+              "instruction_count_at_peak": 81
+            },
+            "per_line": [
+              {
+                "file": "/work/tests/fixtures/src/bank_conflict.cu",
+                "line": 38,
+                "max_live_gpr": 43
+              },
+              {
+                "file": "/work/tests/fixtures/src/bank_conflict.cu",
+                "line": 42,
+                "max_live_gpr": 43
+              },
+              {
+                "file": "/work/tests/fixtures/src/bank_conflict.cu",
+                "line": 43,
+                "max_live_gpr": 43
+              },
+              {
+                "file": "/work/tests/fixtures/src/bank_conflict.cu",
+                "line": 39,
+                "max_live_gpr": 5
+              },
+              {
+                "file": "/work/tests/fixtures/src/bank_conflict.cu",
+                "line": 44,
+                "max_live_gpr": 5
+              },
+              {
+                "file": "/work/tests/fixtures/src/bank_conflict.cu",
+                "line": 37,
+                "max_live_gpr": 2
+              },
+              {
+                "file": "/work/tests/fixtures/src/bank_conflict.cu",
+                "line": 35,
+                "max_live_gpr": 1
+              },
+              {
+                "file": "/work/tests/fixtures/src/bank_conflict.cu",
+                "line": 45,
+                "max_live_gpr": 1
+              }
+            ],
+            "instructions_analyzed": 716
+          },
+          "spills": {
+            "store_instructions": 0,
+            "load_instructions": 0,
+            "store_bytes": 0,
+            "load_bytes": 0,
+            "max_loop_depth": 0,
+            "by_line": []
+          },
+          "occupancy": {
+            "arch": "sm_120",
+            "threads_per_block": 32,
+            "regs_per_thread": 47,
+            "smem_static": 4096,
+            "smem_dynamic": 0,
+            "carveout_kb": null,
+            "warps_per_block": 1,
+            "blocks_per_sm": 20,
+            "active_warps": 20,
+            "max_warps": 48,
+            "occupancy_pct": 41.7,
+            "limiter": "shared_memory",
+            "limits": {
+              "warps": 48,
+              "blocks": 24,
+              "registers": 40,
+              "shared_memory": 20
+            },
+            "regs_allocated_per_block": 1536,
+            "smem_allocated_per_block": 5120,
+            "notes": [],
+            "cliffs": [
+              {
+                "kind": "loss",
+                "resource": "registers",
+                "at": 97,
+                "delta": 50,
+                "blocks_per_sm": 16,
+                "occupancy_pct": 33.3
+              },
+              {
+                "kind": "gain",
+                "resource": "shared_memory",
+                "at": 3840,
+                "delta": -256,
+                "blocks_per_sm": 21,
+                "occupancy_pct": 43.8
+              }
+            ],
+            "register_reallocation": false
+          },
+          "access": {
+            "block_dims": [
+              32,
+              1,
+              1
+            ],
+            "analyzed_count": 321,
+            "unanalyzed_count": 0,
+            "unanalyzed_by_reason": {},
+            "worst_bank_conflict_ways": 1,
+            "conflicted_shared_accesses": 0,
+            "uncoalesced_global_accesses": 0,
+            "by_site": [
+              {
+                "file": "/work/tests/fixtures/src/bank_conflict.cu",
+                "line": 43,
+                "space": "shared",
+                "verdict": "clean",
+                "count": 256,
+                "loop_depth": 1,
+                "conflict_ways": 1,
+                "efficiency_pct": null,
+                "stride": 132,
+                "fixes": []
+              },
+              {
+                "file": "/work/tests/fixtures/src/bank_conflict.cu",
+                "line": 38,
+                "space": "global",
+                "verdict": "coalesced",
+                "count": 32,
+                "loop_depth": 0,
+                "conflict_ways": 1,
+                "efficiency_pct": 80.0,
+                "stride": 4,
+                "fixes": []
+              },
+              {
+                "file": "/work/tests/fixtures/src/bank_conflict.cu",
+                "line": 38,
+                "space": "shared",
+                "verdict": "clean",
+                "count": 32,
+                "loop_depth": 0,
+                "conflict_ways": 1,
+                "efficiency_pct": null,
+                "stride": 4,
+                "fixes": []
+              },
+              {
+                "file": "/work/tests/fixtures/src/bank_conflict.cu",
+                "line": 44,
+                "space": "global",
+                "verdict": "coalesced",
+                "count": 1,
+                "loop_depth": 0,
+                "conflict_ways": 1,
+                "efficiency_pct": 80.0,
+                "stride": 4,
+                "fixes": []
+              }
+            ]
+          },
+          "notes": [
+            "smem_static = shared section 5120 B minus 1024 B system-reserved"
+          ]
+        },
+        {
+          "name": "_Z12col_conflictPKfPfi",
+          "demangled": "col_conflict(float const*, float*, int)",
+          "resources": {
+            "regs": 39,
+            "stack_frame": 0,
+            "shared_section": 5120,
+            "smem_static": 4096,
+            "local": 0,
+            "constant": 916
+          },
+          "pressure": {
+            "available": true,
+            "peak": {
+              "live_gpr": 37,
+              "addr": 656,
+              "file": "/work/tests/fixtures/src/bank_conflict.cu",
+              "line": 14,
+              "instruction_count_at_peak": 1
+            },
+            "per_line": [
+              {
+                "file": "/work/tests/fixtures/src/bank_conflict.cu",
+                "line": 14,
+                "max_live_gpr": 37
+              },
+              {
+                "file": "/work/tests/fixtures/src/bank_conflict.cu",
+                "line": 18,
+                "max_live_gpr": 36
+              },
+              {
+                "file": "/work/tests/fixtures/src/bank_conflict.cu",
+                "line": 19,
+                "max_live_gpr": 14
+              },
+              {
+                "file": "/work/tests/fixtures/src/bank_conflict.cu",
+                "line": 20,
+                "max_live_gpr": 5
+              },
+              {
+                "file": "/work/tests/fixtures/src/bank_conflict.cu",
+                "line": 15,
+                "max_live_gpr": 4
+              },
+              {
+                "file": "/work/tests/fixtures/src/bank_conflict.cu",
+                "line": 13,
+                "max_live_gpr": 2
+              },
+              {
+                "file": "/work/tests/fixtures/src/bank_conflict.cu",
+                "line": 11,
+                "max_live_gpr": 1
+              },
+              {
+                "file": "/work/tests/fixtures/src/bank_conflict.cu",
+                "line": 21,
+                "max_live_gpr": 1
+              }
+            ],
+            "instructions_analyzed": 548
+          },
+          "spills": {
+            "store_instructions": 0,
+            "load_instructions": 0,
+            "store_bytes": 0,
+            "load_bytes": 0,
+            "max_loop_depth": 0,
+            "by_line": []
+          },
+          "occupancy": {
+            "arch": "sm_120",
+            "threads_per_block": 32,
+            "regs_per_thread": 39,
+            "smem_static": 4096,
+            "smem_dynamic": 0,
+            "carveout_kb": null,
+            "warps_per_block": 1,
+            "blocks_per_sm": 20,
+            "active_warps": 20,
+            "max_warps": 48,
+            "occupancy_pct": 41.7,
+            "limiter": "shared_memory",
+            "limits": {
+              "warps": 48,
+              "blocks": 24,
+              "registers": 48,
+              "shared_memory": 20
+            },
+            "regs_allocated_per_block": 1280,
+            "smem_allocated_per_block": 5120,
+            "notes": [],
+            "cliffs": [
+              {
+                "kind": "loss",
+                "resource": "registers",
+                "at": 97,
+                "delta": 58,
+                "blocks_per_sm": 16,
+                "occupancy_pct": 33.3
+              },
+              {
+                "kind": "gain",
+                "resource": "shared_memory",
+                "at": 3840,
+                "delta": -256,
+                "blocks_per_sm": 21,
+                "occupancy_pct": 43.8
+              }
+            ],
+            "register_reallocation": false
+          },
+          "access": {
+            "block_dims": [
+              32,
+              1,
+              1
+            ],
+            "analyzed_count": 289,
+            "unanalyzed_count": 0,
+            "unanalyzed_by_reason": {},
+            "worst_bank_conflict_ways": 32,
+            "conflicted_shared_accesses": 224,
+            "uncoalesced_global_accesses": 0,
+            "by_site": [
+              {
+                "file": "/work/tests/fixtures/src/bank_conflict.cu",
+                "line": 19,
+                "space": "shared",
+                "verdict": "conflict",
+                "count": 224,
+                "loop_depth": 1,
+                "conflict_ways": 32,
+                "efficiency_pct": null,
+                "stride": 128,
+                "fixes": [
+                  "pad the 128 B row pitch to 132 B \u2014 verified clean",
+                  "XOR-swizzle the word index: idx ^ ((idx >> 5) & 31) \u2014 verified clean, costs no shared memory"
+                ]
+              },
+              {
+                "file": "/work/tests/fixtures/src/bank_conflict.cu",
+                "line": 14,
+                "space": "global",
+                "verdict": "coalesced",
+                "count": 32,
+                "loop_depth": 0,
+                "conflict_ways": 1,
+                "efficiency_pct": 80.0,
+                "stride": 4,
+                "fixes": []
+              },
+              {
+                "file": "/work/tests/fixtures/src/bank_conflict.cu",
+                "line": 14,
+                "space": "shared",
+                "verdict": "clean",
+                "count": 32,
+                "loop_depth": 0,
+                "conflict_ways": 1,
+                "efficiency_pct": null,
+                "stride": 4,
+                "fixes": []
+              },
+              {
+                "file": "/work/tests/fixtures/src/bank_conflict.cu",
+                "line": 20,
+                "space": "global",
+                "verdict": "coalesced",
+                "count": 1,
+                "loop_depth": 0,
+                "conflict_ways": 1,
+                "efficiency_pct": 80.0,
+                "stride": 4,
+                "fixes": []
+              }
+            ]
+          },
+          "notes": [
+            "smem_static = shared section 5120 B minus 1024 B system-reserved"
+          ]
+        },
+        {
+          "name": "_Z12padded_cleanPKfPfi",
+          "demangled": "padded_clean(float const*, float*, int)",
+          "resources": {
+            "regs": 39,
+            "stack_frame": 0,
+            "shared_section": 5248,
+            "smem_static": 4224,
+            "local": 0,
+            "constant": 916
+          },
+          "pressure": {
+            "available": true,
+            "peak": {
+              "live_gpr": 37,
+              "addr": 656,
+              "file": "/work/tests/fixtures/src/bank_conflict.cu",
+              "line": 26,
+              "instruction_count_at_peak": 1
+            },
+            "per_line": [
+              {
+                "file": "/work/tests/fixtures/src/bank_conflict.cu",
+                "line": 26,
+                "max_live_gpr": 37
+              },
+              {
+                "file": "/work/tests/fixtures/src/bank_conflict.cu",
+                "line": 30,
+                "max_live_gpr": 36
+              },
+              {
+                "file": "/work/tests/fixtures/src/bank_conflict.cu",
+                "line": 31,
+                "max_live_gpr": 14
+              },
+              {
+                "file": "/work/tests/fixtures/src/bank_conflict.cu",
+                "line": 32,
+                "max_live_gpr": 5
+              },
+              {
+                "file": "/work/tests/fixtures/src/bank_conflict.cu",
+                "line": 27,
+                "max_live_gpr": 4
+              },
+              {
+                "file": "/work/tests/fixtures/src/bank_conflict.cu",
+                "line": 25,
+                "max_live_gpr": 2
+              },
+              {
+                "file": "/work/tests/fixtures/src/bank_conflict.cu",
+                "line": 23,
+                "max_live_gpr": 1
+              },
+              {
+                "file": "/work/tests/fixtures/src/bank_conflict.cu",
+                "line": 33,
+                "max_live_gpr": 1
+              }
+            ],
+            "instructions_analyzed": 548
+          },
+          "spills": {
+            "store_instructions": 0,
+            "load_instructions": 0,
+            "store_bytes": 0,
+            "load_bytes": 0,
+            "max_loop_depth": 0,
+            "by_line": []
+          },
+          "occupancy": {
+            "arch": "sm_120",
+            "threads_per_block": 32,
+            "regs_per_thread": 39,
+            "smem_static": 4224,
+            "smem_dynamic": 0,
+            "carveout_kb": null,
+            "warps_per_block": 1,
+            "blocks_per_sm": 19,
+            "active_warps": 19,
+            "max_warps": 48,
+            "occupancy_pct": 39.6,
+            "limiter": "shared_memory",
+            "limits": {
+              "warps": 48,
+              "blocks": 24,
+              "registers": 48,
+              "shared_memory": 19
+            },
+            "regs_allocated_per_block": 1280,
+            "smem_allocated_per_block": 5248,
+            "notes": [],
+            "cliffs": [
+              {
+                "kind": "loss",
+                "resource": "registers",
+                "at": 97,
+                "delta": 58,
+                "blocks_per_sm": 16,
+                "occupancy_pct": 33.3
+              },
+              {
+                "kind": "gain",
+                "resource": "shared_memory",
+                "at": 4096,
+                "delta": -128,
+                "blocks_per_sm": 20,
+                "occupancy_pct": 41.7
+              }
+            ],
+            "register_reallocation": false
+          },
+          "access": {
+            "block_dims": [
+              32,
+              1,
+              1
+            ],
+            "analyzed_count": 289,
+            "unanalyzed_count": 0,
+            "unanalyzed_by_reason": {},
+            "worst_bank_conflict_ways": 1,
+            "conflicted_shared_accesses": 0,
+            "uncoalesced_global_accesses": 0,
+            "by_site": [
+              {
+                "file": "/work/tests/fixtures/src/bank_conflict.cu",
+                "line": 31,
+                "space": "shared",
+                "verdict": "clean",
+                "count": 224,
+                "loop_depth": 1,
+                "conflict_ways": 1,
+                "efficiency_pct": null,
+                "stride": 132,
+                "fixes": []
+              },
+              {
+                "file": "/work/tests/fixtures/src/bank_conflict.cu",
+                "line": 26,
+                "space": "global",
+                "verdict": "coalesced",
+                "count": 32,
+                "loop_depth": 0,
+                "conflict_ways": 1,
+                "efficiency_pct": 80.0,
+                "stride": 4,
+                "fixes": []
+              },
+              {
+                "file": "/work/tests/fixtures/src/bank_conflict.cu",
+                "line": 26,
+                "space": "shared",
+                "verdict": "clean",
+                "count": 32,
+                "loop_depth": 0,
+                "conflict_ways": 1,
+                "efficiency_pct": null,
+                "stride": 4,
+                "fixes": []
+              },
+              {
+                "file": "/work/tests/fixtures/src/bank_conflict.cu",
+                "line": 32,
+                "space": "global",
+                "verdict": "coalesced",
+                "count": 1,
+                "loop_depth": 0,
+                "conflict_ways": 1,
+                "efficiency_pct": 80.0,
+                "stride": 4,
+                "fixes": []
+              }
+            ]
+          },
+          "notes": [
+            "smem_static = shared section 5248 B minus 1024 B system-reserved"
+          ]
+        },
+        {
+          "name": "_Z14broadcast_readPKfPfi",
+          "demangled": "broadcast_read(float const*, float*, int)",
+          "resources": {
+            "regs": 38,
+            "stack_frame": 0,
+            "shared_section": 1152,
+            "smem_static": 128,
+            "local": 0,
+            "constant": 916
+          },
+          "pressure": {
+            "available": true,
+            "peak": {
+              "live_gpr": 34,
+              "addr": 400,
+              "file": "/work/tests/fixtures/src/bank_conflict.cu",
+              "line": 54,
+              "instruction_count_at_peak": 2
+            },
+            "per_line": [
+              {
+                "file": "/work/tests/fixtures/src/bank_conflict.cu",
+                "line": 54,
+                "max_live_gpr": 34
+              },
+              {
+                "file": "/work/tests/fixtures/src/bank_conflict.cu",
+                "line": 53,
+                "max_live_gpr": 23
+              },
+              {
+                "file": "/work/tests/fixtures/src/bank_conflict.cu",
+                "line": 55,
+                "max_live_gpr": 5
+              },
+              {
+                "file": "/work/tests/fixtures/src/bank_conflict.cu",
+                "line": 50,
+                "max_live_gpr": 4
+              },
+              {
+                "file": "/work/tests/fixtures/src/bank_conflict.cu",
+                "line": 49,
+                "max_live_gpr": 2
+              },
+              {
+                "file": "/work/tests/fixtures/src/bank_conflict.cu",
+                "line": 51,
+                "max_live_gpr": 2
+              },
+              {
+                "file": "/work/tests/fixtures/src/bank_conflict.cu",
+                "line": 47,
+                "max_live_gpr": 1
+              },
+              {
+                "file": "/work/tests/fixtures/src/bank_conflict.cu",
+                "line": 56,
+                "max_live_gpr": 1
+              }
+            ],
+            "instructions_analyzed": 286
+          },
+          "spills": {
+            "store_instructions": 0,
+            "load_instructions": 0,
+            "store_bytes": 0,
+            "load_bytes": 0,
+            "max_loop_depth": 0,
+            "by_line": []
+          },
+          "occupancy": {
+            "arch": "sm_120",
+            "threads_per_block": 32,
+            "regs_per_thread": 38,
+            "smem_static": 128,
+            "smem_dynamic": 0,
+            "carveout_kb": null,
+            "warps_per_block": 1,
+            "blocks_per_sm": 24,
+            "active_warps": 24,
+            "max_warps": 48,
+            "occupancy_pct": 50.0,
+            "limiter": "blocks",
+            "limits": {
+              "warps": 48,
+              "blocks": 24,
+              "registers": 48,
+              "shared_memory": 88
+            },
+            "regs_allocated_per_block": 1280,
+            "smem_allocated_per_block": 1152,
+            "notes": [],
+            "cliffs": [
+              {
+                "kind": "loss",
+                "resource": "registers",
+                "at": 81,
+                "delta": 43,
+                "blocks_per_sm": 20,
+                "occupancy_pct": 41.7
+              }
+            ],
+            "register_reallocation": false
+          },
+          "access": {
+            "block_dims": [
+              32,
+              1,
+              1
+            ],
+            "analyzed_count": 11,
+            "unanalyzed_count": 0,
+            "unanalyzed_by_reason": {},
+            "worst_bank_conflict_ways": 1,
+            "conflicted_shared_accesses": 0,
+            "uncoalesced_global_accesses": 0,
+            "by_site": [
+              {
+                "file": "/work/tests/fixtures/src/bank_conflict.cu",
+                "line": 54,
+                "space": "shared",
+                "verdict": "clean",
+                "count": 8,
+                "loop_depth": 0,
+                "conflict_ways": 1,
+                "efficiency_pct": null,
+                "stride": 0,
+                "fixes": []
+              },
+              {
+                "file": "/work/tests/fixtures/src/bank_conflict.cu",
+                "line": 50,
+                "space": "global",
+                "verdict": "coalesced",
+                "count": 1,
+                "loop_depth": 0,
+                "conflict_ways": 1,
+                "efficiency_pct": 80.0,
+                "stride": 4,
+                "fixes": []
+              },
+              {
+                "file": "/work/tests/fixtures/src/bank_conflict.cu",
+                "line": 50,
+                "space": "shared",
+                "verdict": "clean",
+                "count": 1,
+                "loop_depth": 0,
+                "conflict_ways": 1,
+                "efficiency_pct": null,
+                "stride": 4,
+                "fixes": []
+              },
+              {
+                "file": "/work/tests/fixtures/src/bank_conflict.cu",
+                "line": 55,
+                "space": "global",
+                "verdict": "coalesced",
+                "count": 1,
+                "loop_depth": 0,
+                "conflict_ways": 1,
+                "efficiency_pct": 80.0,
+                "stride": 4,
+                "fixes": []
+              }
+            ]
+          },
+          "notes": [
+            "smem_static = shared section 1152 B minus 1024 B system-reserved"
+          ]
+        },
+        {
+          "name": "_Z14strided_globalPKfPfii",
+          "demangled": "strided_global(float const*, float*, int, int)",
+          "resources": {
+            "regs": 39,
+            "stack_frame": 0,
+            "shared_section": 0,
+            "smem_static": 0,
+            "local": 0,
+            "constant": 920
+          },
+          "pressure": {
+            "available": true,
+            "peak": {
+              "live_gpr": 22,
+              "addr": 608,
+              "file": "/work/tests/fixtures/src/bank_conflict.cu",
+              "line": 62,
+              "instruction_count_at_peak": 6
+            },
+            "per_line": [
+              {
+                "file": "/work/tests/fixtures/src/bank_conflict.cu",
+                "line": 61,
+                "max_live_gpr": 22
+              },
+              {
+                "file": "/work/tests/fixtures/src/bank_conflict.cu",
+                "line": 62,
+                "max_live_gpr": 22
+              },
+              {
+                "file": "/work/tests/fixtures/src/bank_conflict.cu",
+                "line": 63,
+                "max_live_gpr": 5
+              },
+              {
+                "file": "/work/tests/fixtures/src/bank_conflict.cu",
+                "line": 59,
+                "max_live_gpr": 4
+              },
+              {
+                "file": "/work/tests/fixtures/src/bank_conflict.cu",
+                "line": 58,
+                "max_live_gpr": 1
+              },
+              {
+                "file": "/work/tests/fixtures/src/bank_conflict.cu",
+                "line": 64,
+                "max_live_gpr": 1
+              }
+            ],
+            "instructions_analyzed": 122
+          },
+          "spills": {
+            "store_instructions": 0,
+            "load_instructions": 0,
+            "store_bytes": 0,
+            "load_bytes": 0,
+            "max_loop_depth": 0,
+            "by_line": []
+          },
+          "occupancy": {
+            "arch": "sm_120",
+            "threads_per_block": 32,
+            "regs_per_thread": 39,
+            "smem_static": 0,
+            "smem_dynamic": 0,
+            "carveout_kb": null,
+            "warps_per_block": 1,
+            "blocks_per_sm": 24,
+            "active_warps": 24,
+            "max_warps": 48,
+            "occupancy_pct": 50.0,
+            "limiter": "blocks",
+            "limits": {
+              "warps": 48,
+              "blocks": 24,
+              "registers": 48,
+              "shared_memory": 100
+            },
+            "regs_allocated_per_block": 1280,
+            "smem_allocated_per_block": 1024,
+            "notes": [],
+            "cliffs": [
+              {
+                "kind": "loss",
+                "resource": "registers",
+                "at": 81,
+                "delta": 42,
+                "blocks_per_sm": 20,
+                "occupancy_pct": 41.7
+              }
+            ],
+            "register_reallocation": false
+          },
+          "access": {
+            "block_dims": [
+              32,
+              1,
+              1
+            ],
+            "analyzed_count": 30,
+            "unanalyzed_count": 0,
+            "unanalyzed_by_reason": {},
+            "worst_bank_conflict_ways": 1,
+            "conflicted_shared_accesses": 0,
+            "uncoalesced_global_accesses": 29,
+            "by_site": [
+              {
+                "file": "/work/tests/fixtures/src/bank_conflict.cu",
+                "line": 62,
+                "space": "global",
+                "verdict": "uncoalesced",
+                "count": 29,
+                "loop_depth": 1,
+                "conflict_ways": 1,
+                "efficiency_pct": 12.5,
+                "stride": 128,
+                "fixes": []
+              },
+              {
+                "file": "/work/tests/fixtures/src/bank_conflict.cu",
+                "line": 63,
+                "space": "global",
+                "verdict": "coalesced",
+                "count": 1,
+                "loop_depth": 0,
+                "conflict_ways": 1,
+                "efficiency_pct": 80.0,
+                "stride": 4,
+                "fixes": []
+              }
+            ]
+          },
+          "notes": []
+        }
+      ]
+    }
+  ]
+}

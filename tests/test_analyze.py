@@ -13,26 +13,27 @@ from cuxray.parse import cfgdot, ptxasv, sass
 REC = Path(__file__).parent / "fixtures" / "recorded"
 
 
-def load_spill_func():
-    dis = sass.parse_gi((REC / "nvdisasm_gi.spill.sm_120a.txt").read_text())
-    plr = sass.parse_plr((REC / "nvdisasm_plr.spill.sm_120a.txt").read_text())
+def load_spill_func(arch="sm_120a"):
+    dis = sass.parse_gi((REC / f"nvdisasm_gi.spill.{arch}.txt").read_text())
+    plr = sass.parse_plr((REC / f"nvdisasm_plr.spill.{arch}.txt").read_text())
     sass.merge_liveness(dis, plr)
-    cfg = cfgdot.parse((REC / "nvdisasm_cfg.spill.sm_120a.dot").read_text())
+    cfg = cfgdot.parse((REC / f"nvdisasm_cfg.spill.{arch}.dot").read_text())
     name = "_Z6spillyPKfPfii"
     return dis.functions[name], cfg[name].loop_depth
 
 
-def test_spill_bytes_match_ptxas_exactly():
+@pytest.mark.parametrize("arch", ["sm_90", "sm_120a"])
+def test_spill_bytes_match_ptxas_exactly(arch):
     """Our SASS-width accounting must reproduce ptxas -v byte counts.
 
     This is the load-bearing validation: it means spill bytes are reportable
     for cubins cuxray did not compile.
     """
-    func, depths = load_spill_func()
+    func, depths = load_spill_func(arch)
     sm = spill_map(func, depths)
-    pk = ptxasv.parse((REC / "ptxas_v.spill.sm_120a.txt").read_text())["_Z6spillyPKfPfii"]
-    assert sm["store_bytes"] == pk.spill_stores == 548
-    assert sm["load_bytes"] == pk.spill_loads == 556
+    pk = ptxasv.parse((REC / f"ptxas_v.spill.{arch}.txt").read_text())["_Z6spillyPKfPfii"]
+    assert sm["store_bytes"] == pk.spill_stores > 0
+    assert sm["load_bytes"] == pk.spill_loads > 0
 
 
 def test_spill_map_loop_weighting():

@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/KookiesNKareem/cuxray/schema/cuxray.schema.1.json",
+  "title": "cuxray report document (schema/1)",
+  "description": "Contract for `cuxray report --json` / `ls --json`. Changes to schema/1 are additive-only; consumers must tolerate unknown fields.",
+  "type": "object",
+  "required": ["schema", "cuxray_version", "artifact", "toolchain", "units"],
+  "properties": {
+    "schema": { "const": "cuxray.schema/1" },
+    "cuxray_version": { "type": "string" },
+    "artifact": {
+      "type": "object",
+      "required": ["path"],
+      "properties": {
+        "path": { "type": "string" },
+        "sha256": { "type": ["string", "null"] }
+      }
+    },
+    "toolchain": {
+      "type": "object",
+      "required": ["origin"],
+      "properties": { "origin": { "type": "string" } }
+    },
+    "units": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["label", "arch", "cubin_sha256", "kernels"],
+        "properties": {
+          "label": { "type": "string" },
+          "arch": { "type": ["string", "null"] },
+          "cubin_sha256": { "type": "string" },
+          "kernels": { "type": "array", "items": { "$ref": "#/$defs/kernel" } }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "kernel": {
+      "type": "object",
+      "required": ["name", "demangled", "resources", "pressure", "notes"],
+      "properties": {
+        "name": { "type": "string" },
+        "demangled": { "type": "string" },
+        "resources": {
+          "type": "object",
+          "required": ["regs", "stack_frame", "shared_section", "smem_static"],
+          "properties": {
+            "regs": { "type": ["integer", "null"] },
+            "stack_frame": { "type": ["integer", "null"] },
+            "shared_section": { "type": ["integer", "null"] },
+            "smem_static": { "type": ["integer", "null"] },
+            "local": { "type": ["integer", "null"] },
+            "constant": { "type": ["integer", "null"] }
+          }
+        },
+        "pressure": {
+          "type": "object",
+          "required": ["available"],
+          "properties": {
+            "available": { "type": "boolean" },
+            "peak": {
+              "type": "object",
+              "properties": {
+                "live_gpr": { "type": "integer" },
+                "addr": { "type": "integer" },
+                "file": { "type": ["string", "null"] },
+                "line": { "type": ["integer", "null"] }
+              }
+            }
+          }
+        },
+        "spills": {
+          "type": ["object", "null"],
+          "properties": {
+            "store_instructions": { "type": "integer" },
+            "load_instructions": { "type": "integer" },
+            "store_bytes": { "type": "integer" },
+            "load_bytes": { "type": "integer" },
+            "max_loop_depth": { "type": "integer" },
+            "by_line": { "type": "array" }
+          }
+        },
+        "occupancy": {
+          "type": ["object", "null"],
+          "properties": {
+            "blocks_per_sm": { "type": "integer" },
+            "occupancy_pct": { "type": "number" },
+            "limiter": { "type": "string" },
+            "limits": { "type": "object" },
+            "cliffs": { "type": "array" },
+            "register_reallocation": { "type": "boolean" }
+          }
+        },
+        "access": {
+          "type": ["object", "null"],
+          "properties": {
+            "block_dims": { "type": "array" },
+            "dataflow_converged": { "type": "boolean" },
+            "analyzed_count": { "type": "integer" },
+            "unanalyzed_count": { "type": "integer" },
+            "unanalyzed_by_reason": { "type": "object" },
+            "worst_bank_conflict_ways": { "type": "integer" },
+            "conflicted_shared_accesses": { "type": "integer" },
+            "uncoalesced_global_accesses": { "type": "integer" },
+            "by_site": { "type": "array" }
+          }
+        },
+        "notes": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  }
+}

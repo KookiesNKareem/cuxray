@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from rich.console import Console
+
+from .diffgate import HIGHER_BETTER
 from rich.table import Table
 from rich.text import Text
 
@@ -59,11 +61,14 @@ def _render_kernel(k: dict, console: Console) -> None:
         t.add_column("stores")
         t.add_column("loads")
         t.add_column("loop depth")
-        for row in sp["by_line"][:8]:
+        rows = sp["by_line"]
+        for row in rows[:8]:
             loc = f"{(row['file'] or '?').rsplit('/', 1)[-1]}:{row['line']}" if row["line"] else "?"
             depth = row["loop_depth"]
             mark = "🔥" * depth if depth else ""
             t.add_row(loc, str(row["stores"]), str(row["loads"]), f"{depth} {mark}")
+        if len(rows) > 8:
+            t.add_row(f"[dim](+{len(rows) - 8} more locations)[/]", "", "", "")
         console.print(t)
     elif sp is not None:
         console.print("    [green]no spills[/]")
@@ -110,6 +115,8 @@ def _render_kernel(k: dict, console: Console) -> None:
                     issue = f"[yellow]uncoalesced ({s['efficiency_pct']}% efficiency)[/]"
                 depth = s["loop_depth"]
                 t.add_row(loc, issue, str(s["count"]), f"{depth} {'🔥' * depth}")
+            if len(bad) > 8:
+                t.add_row(f"[dim](+{len(bad) - 8} more sites)[/]", "", "", "")
             console.print(f"    [red]access issues:[/] {acc['conflicted_shared_accesses']} "
                           f"conflicted shared · {acc['uncoalesced_global_accesses']} uncoalesced global")
             console.print(t)
@@ -162,7 +169,12 @@ def render_diff(diff: dict, console: Console) -> None:
     for kd in diff["kernels"]:
         for m in kd["changes"]:
             delta = m["delta"]
-            style = "red" if (delta or 0) > 0 else "green"
+            if delta is None or delta == 0:
+                style = "dim"
+            elif m["metric"] in HIGHER_BETTER:
+                style = "green" if delta > 0 else "red"
+            else:
+                style = "red" if delta > 0 else "green"
             t.add_row(
                 kd["demangled"], m["metric"], str(m["old"]), str(m["new"]),
                 Text(f"{delta:+}" if isinstance(delta, (int, float)) else str(delta), style=style),
@@ -170,6 +182,17 @@ def render_diff(diff: dict, console: Console) -> None:
         if not kd["changes"]:
             t.add_row(kd["demangled"], "[dim]unchanged[/]", "", "", "")
     console.print(t)
+    for kd in diff["kernels"]:
+        for sc in kd.get("spill_site_changes", []):
+            loc = f"{(sc['file'] or '?').rsplit('/', 1)[-1]}:{sc['line']}"
+            o, n = sc["old"], sc["new"]
+            if o and not n:
+                console.print(f"  [green]spill site removed:[/] {loc} ({o['instrs']} instrs, depth {o['loop_depth']})")
+            elif n and not o:
+                col = "red" if n["loop_depth"] >= 1 else "yellow"
+                console.print(f"  [{col}]spill site added:[/] {loc} ({n['instrs']} instrs, depth {n['loop_depth']})")
+            else:
+                console.print(f"  spill site changed: {loc} {o['instrs']}→{n['instrs']} instrs, depth {o['loop_depth']}→{n['loop_depth']}")
     for name, status in (("added", diff["added"]), ("removed", diff["removed"])):
         if status:
             console.print(f"[yellow]{name}:[/] {', '.join(status)}")

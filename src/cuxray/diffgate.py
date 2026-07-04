@@ -55,6 +55,16 @@ class GateSyntaxError(ValueError):
     pass
 
 
+class GateError(ValueError):
+    """Gate cannot be evaluated (e.g. required metric unavailable)."""
+
+
+# Metrics where a positive delta is an IMPROVEMENT, not a regression
+HIGHER_BETTER = {"occupancy_pct", "efficiency_pct"}
+
+_ACCESS_METRICS = {"bank_ways", "uncoalesced", "unanalyzed_accesses"}
+
+
 def parse_gate(expr: str) -> list[Clause]:
     clauses = []
     for part in expr.split(","):
@@ -118,6 +128,19 @@ def _metric_value(kernel: dict, arch: Optional[str], clause: Clause):
 
 
 def eval_gate(doc: dict, clauses: list[Clause]) -> list[dict]:
+    # Fail loudly (not with fake violations) when a clause needs access
+    # analysis but no kernel has it — the user forgot --threads and the
+    # binary carries no block-shape metadata.
+    needs_access = [c for c in clauses if c.metric in _ACCESS_METRICS]
+    if needs_access:
+        any_access = any(k.get("access")
+                         for u in doc["units"] for k in u["kernels"])
+        if not any_access:
+            raise GateError(
+                f"metric {needs_access[0].metric!r} requires access analysis: "
+                "pass --threads (or use kernels with .reqntid/__launch_bounds__ "
+                "metadata)"
+            )
     violations = []
     for unit in doc["units"]:
         for k in unit["kernels"]:
@@ -173,6 +196,10 @@ def _get(k: dict, name: str):
 
 
 def diff_reports(old: dict, new: dict, kernel_re: Optional[str] = None) -> dict:
+    so, sn = old.get("schema"), new.get("schema")
+    if so != sn:
+        raise ValueError(f"schema mismatch: {so} vs {sn} — regenerate both reports "
+                         "with the same cuxray version")
     pat = re.compile(kernel_re) if kernel_re else None
 
     def flatten(doc):
@@ -199,13 +226,47 @@ def diff_reports(old: dict, new: dict, kernel_re: Optional[str] = None) -> dict:
                 if isinstance(a, (int, float)) and isinstance(b, (int, float)):
                     delta = round(b - a, 2)
                 changes.append({"metric": metric, "old": a, "new": b, "delta": delta})
+        def spill_sites(k):
+            sp = k.get("spills") or {}
+            return {(r.get("file"), r.get("line")): (r["stores"] + r["loads"], r["loop_depth"])
+                    for r in sp.get("by_line", [])}
+
+        old_sites, new_sites = spill_sites(ko), spill_sites(kn)
+        site_changes = []
+        for loc in sorted(set(old_sites) | set(new_sites), key=str):
+            a, b = old_sites.get(loc), new_sites.get(loc)
+            if a == b:
+                continue
+            site_changes.append({
+                "file": loc[0], "line": loc[1],
+                "old": {"instrs": a[0], "loop_depth": a[1]} if a else None,
+                "new": {"instrs": b[0], "loop_depth": b[1]} if b else None,
+            })
         kernels.append({
             "name": key[1], "arch": key[0],
             "demangled": kn["demangled"], "changes": changes,
+            "spill_site_changes": site_changes,
         })
+    def is_regression(kd) -> bool:
+        for c in kd["changes"]:
+            d = c.get("delta")
+            if d is None:
+                continue
+            worse = d < 0 if c["metric"] in HIGHER_BETTER else d > 0
+            if worse:
+                return True
+        # a spill site appearing (or deepening) inside a loop is a regression
+        for sc in kd.get("spill_site_changes", []):
+            nd = (sc.get("new") or {}).get("loop_depth", 0)
+            od = (sc.get("old") or {}).get("loop_depth")
+            if sc["new"] and nd >= 1 and (sc["old"] is None or nd > od):
+                return True
+        return False
+
     return {
         "schema": "cuxray.diff/1",
         "kernels": kernels,
+        "regressions": sum(1 for k in kernels if is_regression(k)),
         "added": sorted(k[1] for k in n.keys() - o.keys()),
         "removed": sorted(k[1] for k in o.keys() - n.keys()),
         "changed": sum(1 for k in kernels if k["changes"]),
