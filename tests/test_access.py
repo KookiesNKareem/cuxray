@@ -321,3 +321,25 @@ class TestDataflowStep:
         st.set("R28", lv.pure(range(0, 64, 2)))
         step(sass.Instruction(0, "SHF.R.U32.HI", "R32, RZ, 0x3, R28"), st, self._tids())
         assert st.get("R32").vec == tuple((2 * l) >> 3 for l in range(32))
+
+    def test_laneid_exact_unknown_sr_uniform(self):
+        from cuxray.analyze.dataflow import State, step
+        st = State()
+        step(sass.Instruction(0, "S2R", "R0, SR_LANEID"), st, self._tids())
+        assert st.get("R0").vec == tuple(range(32))
+        step(sass.Instruction(16, "S2UR", "UR5, SR_CgaCtaId"), st, self._tids())
+        assert st.get("UR5").is_uniform
+
+    def test_unmodeled_op_uniform_inputs_uniform(self):
+        from cuxray.analyze.dataflow import State, step
+        st = State()
+        st.set("R7", lv.uniform_unknown())
+        step(sass.Instruction(0, "IMAD.HI.U32", "R4, R7, R7, RZ"), st, self._tids())
+        assert st.get("R4").is_uniform
+
+    def test_single_path_definition_survives_merge(self):
+        from cuxray.analyze.dataflow import State
+        a = State({"R4": lv.pure(range(32))})
+        b = State({})
+        a.join_with(b)
+        assert a.get("R4").kind == lv.PURE

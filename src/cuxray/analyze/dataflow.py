@@ -108,12 +108,22 @@ class State:
         return State(dict(self.regs), self.consts)
 
     def join_with(self, other: "State") -> bool:
-        """Merge other into self; True if self changed."""
+        """Merge other into self; True if self changed.
+
+        A register defined on only one incoming path keeps that value:
+        never-written is bottom (join identity), not varying — compilers do
+        not emit reads of undefined registers on reachable paths, so joining
+        against "undefined" would only poison single-path definitions."""
         changed = False
         for k in set(self.regs) | set(other.regs):
-            a = self.regs.get(k, lv.varying())
-            b = other.regs.get(k, lv.varying())
-            j = lv.join(a, b)
+            if k not in other.regs:
+                continue
+            if k not in self.regs:
+                self.regs[k] = other.regs[k]
+                changed = True
+                continue
+            a = self.regs[k]
+            j = lv.join(a, other.regs[k])
             if j != a:
                 self.regs[k] = j
                 changed = True
@@ -195,6 +205,15 @@ def step(instr: Instruction, st: State, tids: dict[str, lv.Value]) -> None:
                 val = lv.varying("predicated write")
         st.set(d, val)
 
+    def fallback(reason: Optional[str] = None) -> None:
+        # Any deterministic op on all-warp-uniform inputs yields a
+        # warp-uniform output, whatever its semantics.
+        vals = [_operand_value(o, st) for o in srcs if not _IMM.match(o)]
+        if vals and all(v.kind != lv.VARYING and v.is_uniform for v in vals):
+            assign(lv.uniform_unknown(ctaid=any(v.ctaid for v in vals)))
+        else:
+            assign(lv.varying(reason))
+
     if base in ("S2R", "S2UR"):
         src = ops[1] if len(ops) > 1 else ""
         m = _TID.search(src)
@@ -202,7 +221,20 @@ def step(instr: Instruction, st: State, tids: dict[str, lv.Value]) -> None:
             assign(tids[m.group(1).lower()])
         elif _CTAID.search(src):
             assign(lv.uniform_unknown(ctaid=True))
+        elif "SR_LANEID" in src:
+            assign(lv.pure(range(32)))
+        elif re.search(r"SR_LANEMASK_?(EQ|LT|LE|GT|GE)", src):
+            kind = re.search(r"SR_LANEMASK_?(EQ|LT|LE|GT|GE)", src).group(1)
+            masks = {"EQ": lambda l: 1 << l,
+                     "LT": lambda l: (1 << l) - 1,
+                     "LE": lambda l: (1 << (l + 1)) - 1,
+                     "GT": lambda l: (0xFFFFFFFF << (l + 1)) & 0xFFFFFFFF,
+                     "GE": lambda l: (0xFFFFFFFF << l) & 0xFFFFFFFF}
+            assign(lv.pure([masks[kind](l) for l in range(32)]))
         elif "SR_" in src:
+            # every other special register (block/cluster/grid ids, sizes,
+            # clocks — a fresh unknown per read) is warp-uniform; only the
+            # lane-identity family above varies within a warp
             assign(lv.uniform_unknown())
         else:
             assign(lv.varying())
@@ -237,7 +269,7 @@ def step(instr: Instruction, st: State, tids: dict[str, lv.Value]) -> None:
                 # offsets; model as uniform-unknown
                 st.set(_next_reg(d), lv.uniform_unknown())
             return
-        assign(lv.varying())
+        fallback()
         return
 
     if base == "SEL":
@@ -257,7 +289,7 @@ def step(instr: Instruction, st: State, tids: dict[str, lv.Value]) -> None:
 
     if base in ("IADD3", "IADD", "VIADD"):
         if has_carry_in:
-            assign(lv.varying())
+            fallback()
             return
         vals = [_operand_value(o, st) for o in srcs]
         res = vals[0] if vals else lv.varying()
@@ -288,12 +320,7 @@ def step(instr: Instruction, st: State, tids: dict[str, lv.Value]) -> None:
             hi = lv.add(lv.shr(a, lv.const(32 - n)), lv.shl(c, lv.const(n)))
             assign(lv.add(b, hi))
             return
-        if ".HI" in op:
-            vals = [_operand_value(o, st) for o in srcs if not _IMM.match(o)]
-            assign(lv.uniform_unknown()
-                   if vals and all(v.is_uniform for v in vals) else lv.varying())
-            return
-        assign(lv.varying())
+        fallback()
         return
 
     if base in ("SHF", "USHF"):
@@ -311,16 +338,20 @@ def step(instr: Instruction, st: State, tids: dict[str, lv.Value]) -> None:
                 a = _operand_value(ops[1], st)
                 assign(lv.shl(a, sh) if ".L" in op else lv.shr(a, sh))
                 return
-        assign(lv.varying())
+        fallback()
         return
 
     if base in ("SHL",):
-        assign(lv.shl(_operand_value(ops[1], st), _operand_value(ops[2], st))
-               if len(ops) >= 3 else lv.varying())
+        if len(ops) >= 3:
+            assign(lv.shl(_operand_value(ops[1], st), _operand_value(ops[2], st)))
+        else:
+            fallback()
         return
     if base in ("SHR",):
-        assign(lv.shr(_operand_value(ops[1], st), _operand_value(ops[2], st))
-               if len(ops) >= 3 else lv.varying())
+        if len(ops) >= 3:
+            assign(lv.shr(_operand_value(ops[1], st), _operand_value(ops[2], st)))
+        else:
+            fallback()
         return
 
     if base in ("LOP3", "ULOP3", "PLOP3"):
@@ -329,7 +360,7 @@ def step(instr: Instruction, st: State, tids: dict[str, lv.Value]) -> None:
             a, b, c = (_operand_value(o, st) for o in ops[1:4])
             assign(lv.lop3(a, b, c, int(ops[4], 0)))
             return
-        assign(lv.varying())
+        fallback()
         return
 
     if base == "PRMT":
@@ -367,9 +398,10 @@ def step(instr: Instruction, st: State, tids: dict[str, lv.Value]) -> None:
                         "WARPSYNC", "FENCE", "ERRBAR", "RET", "CALL", "JMP")):
         return  # no GPR destination we track
 
-    # Anything else that names a destination register: unknown semantics
+    # Anything else that names a destination register: unknown semantics,
+    # but uniform inputs still imply a uniform output
     if d is not None:
-        assign(lv.varying(f"unmodeled {base}"))
+        fallback(f"unmodeled {base}")
 
 
 def _next_reg(reg: str, offset: int = 1) -> str:
