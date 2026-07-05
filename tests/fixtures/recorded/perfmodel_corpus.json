@@ -8,8 +8,6 @@
         "clock_ghz": 1.41,
         "achievable_gbs": 1682
       },
-      "max_mean_err_pct": 13.0,
-      "max_single_err_pct": 32.0,
       "samples": [
         {
           "bytes": 2168832,
@@ -81,7 +79,9 @@
           "macs": 0,
           "us": 33.7
         }
-      ]
+      ],
+      "loo_mean_err_pct": 15.1,
+      "loo_max_err_pct": 40.0
     },
     {
       "name": "memory-bound W4A8 decode GEMV, A5000 (sm_86)",
@@ -90,8 +90,6 @@
         "clock_ghz": 1.695,
         "achievable_gbs": 681
       },
-      "max_mean_err_pct": 6.0,
-      "max_single_err_pct": 12.0,
       "samples": [
         {
           "bytes": 2168832,
@@ -143,7 +141,9 @@
           "macs": 0,
           "us": 61.5
         }
-      ]
+      ],
+      "loo_mean_err_pct": 4.9,
+      "loo_max_err_pct": 15.0
     },
     {
       "name": "compute-bound FP32 FMA throughput, A100 (sm_80)",
@@ -152,8 +152,6 @@
         "clock_ghz": 1.41,
         "achievable_gbs": 1682
       },
-      "max_mean_err_pct": 5.0,
-      "max_single_err_pct": 13.0,
       "samples": [
         {
           "bytes": 1000,
@@ -197,7 +195,9 @@
           "datapath": "simt-fp",
           "us": 46500.2
         }
-      ]
+      ],
+      "loo_mean_err_pct": 5.7,
+      "loo_max_err_pct": 19.0
     },
     {
       "name": "tensor-core fp16 GEMM (cuBLAS), A100 (sm_80)",
@@ -206,8 +206,6 @@
         "clock_ghz": 1.41,
         "achievable_gbs": 1682
       },
-      "max_mean_err_pct": 8.0,
-      "max_single_err_pct": 25.0,
       "samples": [
         {
           "bytes": 100663296,
@@ -265,7 +263,9 @@
           "datapath": "tensor",
           "us": 1862.0
         }
-      ]
+      ],
+      "loo_mean_err_pct": 9.4,
+      "loo_max_err_pct": 39.0
     }
   ]
 }

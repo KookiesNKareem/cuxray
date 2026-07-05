@@ -6,26 +6,33 @@ runtime arguments (K, M, ...). So the division of labor is:
   * the CALLER supplies the launch's total work — DRAM bytes and, for a
     compute-bound kernel, the MAC count — which for a GEMM/GEMV/attention is
     a one-line formula in the problem dims;
-  * cuxray supplies the device-independent ideal roofline time from that
-    work, and a two-constant calibration captures how this kernel-family
-    realizes it on a given device:
+  * cuxray supplies the ideal roofline time from that work, and a
+    two-constant calibration captures how this kernel-family realizes it on a
+    given device:
 
         t = t_ideal / e_sat + t_fixed
 
     - t_ideal  = max(bytes / achievable_bw, macs / datapath_peak)
-    - e_sat    ∈ (0,1]: the saturating efficiency once the launch is large
-      enough to amortize overhead. ~0.95-1.0, largely device-independent.
-    - t_fixed  (µs): fixed per-launch cost — kernel launch, any fused
-      pre/post pass, and un-amortized memory latency. Device-specific.
+    - e_sat    the saturating efficiency once the launch amortizes overhead.
+      Fitted, not physical: it also absorbs error in the caller's byte/MAC
+      estimate and the peak table, so values slightly above 1.0 occur.
+    - t_fixed  (µs): fixed per-launch cost — launch, any fused pre/post pass,
+      un-amortized latency.
 
-`fit()` recovers (e_sat, t_fixed) from a handful of (work, measured_us)
-points — calibrate once per device, then predict the rest with no GPU.
+`fit()` recovers (e_sat, t_fixed) by least squares. IMPORTANT: the constants
+are per (kernel-family, device), NOT per device — a GEMV, an FMA loop, and a
+cuBLAS GEMM on the same A100 fit very different constants and do NOT
+cross-apply (cross-family error runs 100-400%). Calibrate a family once,
+then predict other sizes of THAT family on THAT device with no GPU.
 
-Validated on the W4A8 decode GEMV: A100 11% mean / 30% max over 14 shapes,
-A5000 2% mean / 8% max over 10 (see tests/test_perfmodel.py, machine-checked
-against the recorded corpus). Absolute error is dominated by the smallest,
-overhead-bound shapes; the RELATIVE ordering of variants at a fixed problem
-size is tighter still, because t_ideal cancels and only e_sat/t_fixed differ.
+Recorded validation is LEAVE-ONE-OUT (held out — see tests/test_perfmodel.py):
+memory-bound W4A8 decode GEMV on A100 + A5000, compute-bound FP32 FMA and
+tensor-core cuBLAS fp16 GEMM on A100. Held-out error ~2-37% by family, worst
+at the smallest overhead-bound sizes. NOT validated: mixed memory+compute
+near the roofline crossover, low-occupancy / latency-bound kernels, atomics,
+divergence, irregular/uncoalesced access, reductions/stencils, attention,
+non-GEMM tensor code, FMA/tensor on non-A100. Relative ordering of
+same-family variants is more robust than the absolute number.
 """
 
 from __future__ import annotations
@@ -39,6 +46,7 @@ class Device:
     sms: int
     clock_ghz: float               # sustained GHz
     achievable_gbs: float          # measured streaming bandwidth, not spec
+    cc: Optional[tuple] = None     # (major, minor) for the MAC-peak table
 
 
 @dataclass
@@ -97,10 +105,12 @@ def fit(samples: list[tuple[float, float]]) -> Calibration:
 
 def _datapath_peak_macs_per_us(dev: Device, precision: str,
                                datapath: str) -> Optional[float]:
-    from ..archspec import lookup, mac_rates
-    try:
-        spec = lookup(f"sm_{80 if dev.sms >= 100 else 86}")
-    except Exception:
+    from ..archspec import SPECS, lookup, mac_rates
+    if dev.cc is not None:
+        spec = SPECS.get(tuple(dev.cc))
+    else:  # no cc given: pick the closest-SM known Ampere+ arch (rough)
+        spec = lookup("sm_80" if dev.sms >= 100 else "sm_86")
+    if spec is None:
         return None
     rates = mac_rates(spec)
     if not rates:

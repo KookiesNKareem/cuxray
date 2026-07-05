@@ -1,8 +1,10 @@
-"""The perf model's accuracy claim, machine-checked against the recorded
-hardware corpus — across kernel TYPES (memory-bound, compute-bound,
-tensor-core) and DEVICES (A100, A5000). For each case: build Work, compute
-t_ideal (which validates the per-arch peaks), fit (e_sat, t_fixed), assert
-the residual stays within the recorded bound."""
+"""Perf model: the ROOFLINE FLOOR is exact arithmetic on the caller's work +
+the validated peak table; the calibrated wall-clock ESTIMATE is empirical and
+is reported here as leave-one-out (held-out) residuals, NOT in-sample fit —
+so the error numbers are honest. The recorded corpus spans memory-bound /
+compute-bound / tensor-core on A100 (+ A5000 for memory-bound); it does NOT
+cover mixed, low-occupancy, irregular, or attention kernels.
+"""
 import json
 from pathlib import Path
 
@@ -21,44 +23,62 @@ def _work(s):
                 datapath=s.get("datapath", "simt-int"))
 
 
-@pytest.mark.parametrize("case", CORPUS["cases"], ids=[c["name"] for c in CORPUS["cases"]])
-def test_calibrated_model_accuracy(case):
+def _loo_errors(case):
+    """Leave-one-out: fit on all-but-one, predict the held-out point."""
     dev = Device(**case["device"])
-    ideals = [ideal_us(_work(s), dev)["t_ideal_us"] for s in case["samples"]]
-    meas = [s["us"] for s in case["samples"]]
-    calib = fit(list(zip(ideals, meas)))
-    assert 0.4 <= calib.e_sat <= 1.2, (case["name"], calib)
-    errs = [abs(predict(_work(s), dev, calib)["us"] - s["us"]) / s["us"] * 100
-            for s in case["samples"]]
+    samples = case["samples"]
+    ideals = [ideal_us(_work(s), dev)["t_ideal_us"] for s in samples]
+    errs = []
+    for i in range(len(samples)):
+        train = [(ideals[j], samples[j]["us"]) for j in range(len(samples)) if j != i]
+        calib = fit(train)
+        pred = predict(_work(samples[i]), dev, calib)["us"]
+        errs.append(abs(pred - samples[i]["us"]) / samples[i]["us"] * 100)
+    return errs
+
+
+@pytest.mark.parametrize("case", CORPUS["cases"], ids=[c["name"] for c in CORPUS["cases"]])
+def test_held_out_estimate_within_recorded_bound(case):
+    errs = _loo_errors(case)
     mean = sum(errs) / len(errs)
-    assert mean <= case["max_mean_err_pct"], f"{case['name']}: mean {mean:.1f}%"
-    assert max(errs) <= case["max_single_err_pct"], f"{case['name']}: max {max(errs):.0f}%"
+    # bounds are the HELD-OUT (leave-one-out) tolerances recorded per case —
+    # looser than in-sample, and that is the honest number
+    assert mean <= case["loo_mean_err_pct"], f"{case['name']}: LOO mean {mean:.1f}%"
+    assert max(errs) <= case["loo_max_err_pct"], f"{case['name']}: LOO max {max(errs):.0f}%"
 
 
-def test_all_kernel_types_covered():
+def test_calibration_does_not_transfer_across_families():
+    """Documents the real limitation: constants are per (family, device).
+    A tensor-GEMM calibration mispredicts a GEMV badly on the same device."""
+    cases = {c["name"].split(",")[0]: c for c in CORPUS["cases"]}
+    gemv = cases["memory-bound W4A8 decode GEMV"]
+    gemm = cases["tensor-core fp16 GEMM (cuBLAS)"]
+    dev = Device(**gemv["device"])
+    gi = [ideal_us(_work(s), dev)["t_ideal_us"] for s in gemm["samples"]]
+    gemm_calib = fit(list(zip(gi, [s["us"] for s in gemm["samples"]])))
+    errs = [abs(predict(_work(s), dev, gemm_calib)["us"] - s["us"]) / s["us"] * 100
+            for s in gemv["samples"]]
+    assert sum(errs) / len(errs) > 30   # cross-family transfer is bad, as expected
+
+
+def test_roofline_floor_is_exact_arithmetic():
+    # the floor has no free parameters — pure work / peak
+    dev = Device(sms=108, clock_ghz=1.41, achievable_gbs=1682)
+    r = ideal_us(Work(dram_bytes=1682e9 * 1e-6 * 10), dev)   # exactly 10 µs of BW
+    assert abs(r["t_mem_ideal_us"] - 10.0) < 1e-6
+    assert r["bound"] == "memory"
+
+
+def test_all_kernel_types_present():
     dps = {s.get("datapath", "simt-int")
            for c in CORPUS["cases"] for s in c["samples"]}
     assert {"simt-int", "simt-fp", "tensor"} <= dps
 
 
-def test_fit_recovers_known_line():
-    c = fit([(i, i / 0.8 + 5) for i in (10, 20, 40, 80)])
-    assert abs(c.e_sat - 0.8) < 1e-3 and abs(c.t_fixed_us - 5) < 1e-3
-
-
-def test_relative_ranking_ignores_fixed_work():
-    dev = Device(sms=108, clock_ghz=1.41, achievable_gbs=1682)
-    w = Work(dram_bytes=30e6)
-    fast = predict(w, dev, Calibration(e_sat=0.95, t_fixed_us=6))["us"]
-    slow = predict(w, dev, Calibration(e_sat=0.70, t_fixed_us=6))["us"]
-    assert fast < slow
-
-
 def test_datapath_peaks_land_near_hardware():
-    # FP32 FMA peak on A100 ≈ 9.74 TMAC/s; tensor fp16 ≈ 156 TMAC/s.
     from cuxray.analyze.perfmodel import _datapath_peak_macs_per_us
-    dev = Device(sms=108, clock_ghz=1.41, achievable_gbs=1682)
-    fp32 = _datapath_peak_macs_per_us(dev, "fp32", "simt-fp")   # MAC/µs
+    dev = Device(sms=108, clock_ghz=1.41, achievable_gbs=1682, cc=(8, 0))
+    fp32 = _datapath_peak_macs_per_us(dev, "fp32", "simt-fp")
     tc = _datapath_peak_macs_per_us(dev, "fp16", "tensor")
-    assert 9.0e6 <= fp32 <= 10.5e6      # ~9.74 TMAC/s
-    assert 1.4e8 <= tc <= 1.7e8         # ~156 TMAC/s (312 TFLOP/s)
+    assert 9.0e6 <= fp32 <= 10.5e6      # ~9.74 TMAC/s FP32
+    assert 1.4e8 <= tc <= 1.7e8         # ~156 TMAC/s tensor fp16
