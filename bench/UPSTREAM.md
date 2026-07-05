@@ -69,7 +69,37 @@ the box clone /root/llama.cpp has the build + bench setup but carries a
 local test-shapes patch in tests/test-backend-ops.cpp — do NOT include
 that in the PR branch.
 
-## Track 3 (2026-07-05, A100 session): THE PR TARGET — W4A8 on Ampere
+## Track 3 progress (same day): W4A8 kernel built, both GPUs measured
+
+bench/gemv_vllm.cu now has the full CompressedTensorsW4A8Int path: raw-s4
+repack (signed high-nibble dp4a — bytes are 16*s4, /16 folded into weight
+scales, which deletes the offset-correction sum subsystem entirely),
+2-phase per-token dynamic int8 quant (stand-in for vLLM's
+ops.scaled_int8_quant), batch 1-8 (interleaved swizzled int8 tiles),
+split-K, pointer-marched inner loop (cuxray-guided: 147.7 -> ~65 stall
+cyc/512B). Correct at 0.0098-0.0122 everywhere on both GPUs.
+
+Batch-1 vs current Marlin-W4A16 fallback (incl. stand-in quant):
+- A100:  15.7/18.5/20.0/24.3 vs 15.6/21.8/19.5/23.2 -> tie/+18%/-2%/-5%
+- A5000: 18.5/-/-/49.4 vs 17.4/-/-/47.8 (dp4a) BUT the fp16-math kernel
+  wins there: 15.6/47.5 -> +10%/+1%
+Stand-in quant costs ~2-3 us/call (3 launches); the vLLM integration
+uses their optimized quant op, which should close most of the A100
+14336 deficit (v7-equivalence bound: 22.0 us incl quant, beats 23.2).
+
+PR DESIGN INSIGHT (cuxray-derived): the optimal math flips per SKU —
+fp16 dequant math saturates sm_86 but is issue-capacity-impossible on
+sm_80 (196 stall-cyc/512B = 106% of an SM's issue slots at A100's
+per-SM bandwidth demand); dp4a (65) fits both but loses to fp16 on
+sm_86. AmpereW4A8LinearKernel should dispatch internally per capability:
+sm_80 -> dp4a, sm_86/89 -> fp16-dequant math. Static analysis receipts
+go in the PR description.
+
+Remaining for the PR: vLLM-tree integration (kernel in csrc, registry
+entry, their quant op, their tests), real W4A8 checkpoint end-to-end,
+prefill fallback, 4090 (sm_89) datapoint.
+
+## Track 3 original finding (2026-07-05, A100 session): W4A8 on Ampere
 
 vLLM has NO W4A8 kernel below Hopper: CutlassW4A8LinearKernel and Machete
 both gate on compute capability 90 ("CUTLASS W4A8 requires compute
