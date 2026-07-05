@@ -4,8 +4,8 @@
 [![CI](https://github.com/KookiesNKareem/cuxray/actions/workflows/ci.yml/badge.svg)](https://github.com/KookiesNKareem/cuxray/actions)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
-Static analysis and optimization for CUDA kernel binaries — register
-pressure, spills, occupancy, bank conflicts — **without a GPU**.
+Static analysis and optimization for CUDA kernel binaries (register
+pressure, spills, occupancy, bank conflicts) **without a GPU**.
 
 cuxray reads the decisions the compiler froze into your cubin and combines
 them with NVIDIA's published architecture tables. Because those models are
@@ -16,19 +16,29 @@ estimates (roofline, cycle counts) are explicitly labeled `est.` and
 validated against hardware; anything unknowable is reported as unknowable,
 with the reason.
 
+Point it at any cubin — one you didn't build — and get a ranked, confidence-
+tagged list of exactly what's slow and how to fix it. No GPU is touched.
+
 ```console
 $ pip install cuxray
-$ cuxray report kernel.cubin --threads 256
+$ cuxray advise w4a8_gemv.sm_80.cubin --threads 256
 
-  moe_gemm(float const*, float*, int)
-    regs 168 · smem 8 KB
-    spills: 24 stores (96 B) / 24 loads (96 B)
-  location         stores   loads   loop depth
-  moe_gemm.cu:145  24       24      1 🔥
-    peak pressure: 166 live GPRs at moe_gemm.cu:142
-    occupancy @256 thr: 16.7% (1 blocks/SM) — limiter: registers
-      cliff: registers → 128 (-40) gives 2 blocks/SM (33.3%)
+  gemv_w4a8<__half, 1, 1, 1>(uint4 const*, signed char const*, ...)  (w4a8_gemv.sm_80.cubin)
+    1. cut registers to 40 (-4)  · high confidence · impact 50
+       unlocks 6 blocks/SM (62.5% → 75.0%); current limiter is registers
+       evidence: occupancy model (validated vs cuda_occupancy.h + runtime API)
+    2. SIMT datapath caps this loop — tensor cores scale past it  · medium confidence · impact 40
+       MACs run on the SIMT int8 datapath (dp4a/FMA). On sm_80 the tensor cores do ~8x more
+       int8 MACs/clock. This is fine while memory-bound (low arithmetic-per-byte / batch 1),
+       but as arithmetic-per-byte grows the loop becomes SIMT-compute-bound and a tensor-core
+       implementation would be up to ~8x faster. Measure across your batch sizes to find the
+       crossover.
+       evidence: static op-mix + per-arch MAC-rate model (approximate)
 ```
+
+Every finding is a fact the compiler already froze into the binary — occupancy,
+spills, the datapath a loop's MACs actually run on. For bank conflicts it goes
+further and *synthesizes a verified fix* (`cuxray solve`, below).
 
 ## Features
 
@@ -46,9 +56,15 @@ $ cuxray report kernel.cubin --threads 256
 - Per-loop cycle estimates (`cuxray sched`) from the compiler's embedded
   instruction schedule — validated within 1% of measured hardware cycles on
   deterministic loops (sm_80–sm_90a).
+- Datapath crossover: flags a loop whose MACs run on the SIMT lanes (dp4a /
+  FMA) and reports how much tensor-core headroom the arithmetic leaves — the
+  ceiling a memory-bound kernel hides until batch grows.
 
 **Optimize**
 
+- `cuxray advise` ranks every finding by impact-weighted severity into one
+  action list; `cuxray survey` does it across a whole library, heaviest
+  kernels first, so you fix what moves the needle.
 - `cuxray solve` searches CUTLASS-style swizzles and returns only layouts
   it has verified conflict-free for every shared access in the kernel.
 - `cuxray tune-regs` recompiles across `-maxrregcount` values and marks the
@@ -78,23 +94,37 @@ cuxray report kernels.so --kernel "moe.*" --threads 256
 cuxray ls kernels.so                      # fast listing, no disassembly
 ```
 
+**Prioritize across a library** — `advise` (above) ranks one kernel; these
+scale it out and track fixes across builds:
+
+```console
+cuxray survey kernels.so --threads 256    # rank every kernel by fixable impact
+cuxray compare old.so new.so              # did the fix land? per-kernel A/B
+cuxray why kernel.cubin --line 145        # dataflow slice: where an address came from
+```
+
 **Fix bank conflicts** — derive a verified swizzle for the whole kernel:
 
 ```console
-$ cuxray solve kernel.cubin --threads 32
-  solution: Swizzle<3,4,3>  (zero smem cost, verified on all accesses)
-    apply to byte offsets: addr ^ ((addr >> 3) & 0x70)
-    e.g. ldsm_async.cu:37 LDSM: 8-way → clean
+$ cuxray solve bank_conflict.cubin --threads 256
+  _Z12col_conflictPKfPfi
+    224 conflicted of 256 shared accesses
+  solution (all accesses): Swizzle<5,2,5>  (zero smem cost, verified)
+    apply to byte offsets: addr ^ ((addr >> 5) & 0x7c)
+    e.g. bank_conflict.cu:19 LDS: 32-way → clean
+    // + a ready-to-paste __device__ swizzle() and the cute::Swizzle<5,2,5> layout
 ```
 
 **Tune register caps** — map the whole trade-off in seconds of CPU:
 
 ```console
-$ cuxray tune-regs kernel.ptx --threads 256
-   cap   regs   spill bytes   blocks/SM   occupancy
-    40     40           424           6      100.0%   ● pareto
-    48     48             0           5       83.3%   ● pareto
-  none     56             0           4       66.7%
+$ cuxray tune-regs spill.ptx --threads 256
+   cap    regs    spill bytes    spill instrs    top spill line    blocks/SM    occupancy
+    24      24           1860             463                14            8       100.0%
+    32      32           1172             291                14            8       100.0%    ● pareto
+    40      40            468             115                10            6        75.0%    ● pareto
+    48      48              0               0                 -            5        62.5%    ● pareto
+    64      64              0               0                 -            4        50.0%
 ```
 
 **Gate regressions in CI** — exit 1 on violation, per-kernel budgets,
@@ -114,9 +144,20 @@ cuxray diff old.so new.so --fail-on-regression
 **Estimate cycles** — the compiler's own schedule, summed per loop:
 
 ```console
-$ cuxray sched kernel.cubin
+$ cuxray sched spill.cubin        # a register-capped build that spills
   est. loop lines 12-14 (depth 1): 466 issue+stall cycles/iter
-      spill.cu:14: 374 cycles     # the spills ARE the stall cost
+      spill.cu:14: 374 cycles     # the spill traffic IS the stall cost
+      spill.cu:13: 85 cycles
+```
+
+**Bound what's possible** — the roofline floor for a launch (a true lower
+bound, no free parameters) and which resource binds:
+
+```console
+$ cuxray roofline --bytes 134217728 --sms 108 --clock 1.41 --peak-gbs 1400 --cc sm_80
+  roofline floor: 95.87 µs  (memory-bound)
+    memory 95.87 µs · compute 0.0 µs
+  a lower bound — a real kernel runs slower by its efficiency
 ```
 
 **What-if** — no binary needed:
