@@ -16,8 +16,7 @@ estimates (roofline, cycle counts) are explicitly labeled `est.` and
 validated against hardware; anything unknowable is reported as unknowable,
 with the reason.
 
-Point it at any cubin — one you didn't build — and get a ranked, confidence-
-tagged list of exactly what's slow and how to fix it. No GPU is touched.
+Point it at any cubin and get a ranked, confidence-tagged list of exactly what's slow and how to fix it. No GPU is touched.
 
 ```console
 $ pip install cuxray
@@ -36,8 +35,7 @@ $ cuxray advise w4a8_gemv.sm_80.cubin --threads 256
        evidence: static op-mix + per-arch MAC-rate model (approximate)
 ```
 
-Every finding is a fact the compiler already froze into the binary — occupancy,
-spills, the datapath a loop's MACs actually run on. For bank conflicts it goes
+Every finding is a fact frozen by the compiler into the binary. For bank conflicts it goes
 further and *synthesizes a verified fix* (`cuxray solve`, below).
 
 ## Features
@@ -74,15 +72,19 @@ further and *synthesizes a verified fix* (`cuxray solve`, below).
 - Conflict reports include verified fix suggestions with their shared-memory
   cost and occupancy impact.
 
-**Integrate**
+## Quick start
 
-- CI gating with exit codes, per-kernel budget files, build-to-build `diff`
-  with regression detection, SARIF output for PR annotations, and a
-  reusable GitHub Action.
-- Stable, versioned JSON from every command; results cached on disk.
-- No setup: runs on any Linux machine, fetching pinned, sha256-verified
-  NVIDIA binary utilities on first use. Works on binaries you didn't build
-  — a vLLM wheel, a Triton cache, a `.so` from PyPI.
+```console
+pip install cuxray                            # CPU-only — no CUDA, no GPU
+cuxray advise mykernels.so --threads 256      # ranked fixes for every kernel
+cuxray solve mykernels.so --threads 256       # verified swizzle for any bank conflict
+cuxray gate mykernels.so "spill_instrs==0"    # exit 1 in CI on a regression
+```
+
+Point it at anything holding cubins — a `.cubin`, a host `.so`, a directory of
+Triton caches, a `.ptx`, even a wheel you `pip download`ed. On first run it
+fetches pinned, sha256-verified NVIDIA binary utilities; there is nothing else
+to install and no GPU is ever touched.
 
 ## Usage
 
