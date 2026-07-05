@@ -254,6 +254,120 @@ __global__ void gemv_v4(const uint4* __restrict__ w, const half* __restrict__ x,
     }
 }
 
+// ---------------- v5: independent accumulator chains per u-slice ---------
+// sched on v4: dequant FMA chains stall ~4-5 cy per dependent op. Give the
+// scheduler 8 independent chains per row (h[u][2]) and fold once per chunk.
+__global__ void gemv_v5(const uint4* __restrict__ w, const half* __restrict__ x,
+                        const half* __restrict__ scales, half* __restrict__ y,
+                        int M, int K) {
+    extern __shared__ half xs[];
+    char* xb = (char*)xs;
+    for (int k = threadIdx.x * 8; k < K; k += blockDim.x * 8)
+        *(uint4*)(xb + sw243(k * 2)) = *(const uint4*)(x + k);
+    __syncthreads();
+
+    int warps = blockDim.x / 32;
+    int warp = threadIdx.x / 32;
+    int lane = threadIdx.x & 31;
+    int m0 = (blockIdx.x * warps + warp) * RPW;
+    if (m0 >= M) return;
+    int chunks = K / 32;
+    const half2 sub = __halves2half2(__ushort_as_half(0x6408), __ushort_as_half(0x6408));
+    const half2 hz = __halves2half2(__ushort_as_half(0), __ushort_as_half(0));
+
+    float acc[RPW];
+    #pragma unroll
+    for (int r = 0; r < RPW; ++r) acc[r] = 0.f;
+
+    for (int c = lane; c < chunks; c += 32) {
+        int k0 = c * 32;
+        uint4 q[RPW];
+        #pragma unroll
+        for (int r = 0; r < RPW; ++r)
+            q[r] = w[(size_t)(m0 + r) * chunks + c];
+        #pragma unroll
+        for (int r = 0; r < RPW; ++r) {
+            float s = __half2float(scales[(size_t)(m0 + r) * (K / G) + k0 / G]);
+            const unsigned qw[4] = {q[r].x, q[r].y, q[r].z, q[r].w};
+            half2 h[4] = {hz, hz, hz, hz};   // 4 independent chains (chain len 4)
+            #pragma unroll
+            for (int u = 0; u < 4; ++u) {
+                const char* xu = xb + sw243((unsigned)(k0 + u * 8) * 2);
+                #pragma unroll
+                for (int t = 0; t < 4; ++t) {
+                    unsigned b = ((qw[u] >> (4 * t)) & 0x000F000Fu) | 0x64006400u;
+                    h[u] = __hfma2(__hsub2(*(const half2*)&b, sub),
+                                   *(const half2*)(xu + 4 * t), h[u]);
+                }
+            }
+            half2 hs = __hadd2(__hadd2(h[0], h[1]), __hadd2(h[2], h[3]));
+            acc[r] += s * (__half2float(__low2half(hs)) + __half2float(__high2half(hs)));
+        }
+    }
+    #pragma unroll
+    for (int r = 0; r < RPW; ++r) {
+        float a = acc[r];
+        #pragma unroll
+        for (int off = 16; off; off >>= 1)
+            a += __shfl_down_sync(0xffffffff, a, off);
+        if (lane == 0) y[m0 + r] = __float2half(a);
+    }
+}
+
+// v5b: no shared memory — x served from L1/L2 (8 KB, hot after first blocks)
+__global__ void gemv_v5b(const uint4* __restrict__ w, const half* __restrict__ x,
+                         const half* __restrict__ scales, half* __restrict__ y,
+                         int M, int K) {
+    int warps = blockDim.x / 32;
+    int warp = threadIdx.x / 32;
+    int lane = threadIdx.x & 31;
+    int m0 = (blockIdx.x * warps + warp) * RPW;
+    if (m0 >= M) return;
+    int chunks = K / 32;
+    const half2 sub = __halves2half2(__ushort_as_half(0x6408), __ushort_as_half(0x6408));
+    const half2 hz = __halves2half2(__ushort_as_half(0), __ushort_as_half(0));
+
+    float acc[RPW];
+    #pragma unroll
+    for (int r = 0; r < RPW; ++r) acc[r] = 0.f;
+
+    for (int c = lane; c < chunks; c += 32) {
+        int k0 = c * 32;
+        uint4 q[RPW];
+        #pragma unroll
+        for (int r = 0; r < RPW; ++r)
+            q[r] = w[(size_t)(m0 + r) * chunks + c];
+        half2 xv[16];
+        #pragma unroll
+        for (int t = 0; t < 16; ++t)
+            xv[t] = __ldg((const half2*)(x + k0) + t);
+        #pragma unroll
+        for (int r = 0; r < RPW; ++r) {
+            float s = __half2float(scales[(size_t)(m0 + r) * (K / G) + k0 / G]);
+            const unsigned qw[4] = {q[r].x, q[r].y, q[r].z, q[r].w};
+            half2 h[4] = {hz, hz, hz, hz};
+            #pragma unroll
+            for (int u = 0; u < 4; ++u)
+                #pragma unroll
+                for (int t = 0; t < 4; ++t) {
+                    unsigned b = ((qw[u] >> (4 * t)) & 0x000F000Fu) | 0x64006400u;
+                    h[u] = __hfma2(__hsub2(*(const half2*)&b, sub),
+                                   xv[u * 4 + t], h[u]);
+                }
+            half2 hs = __hadd2(__hadd2(h[0], h[1]), __hadd2(h[2], h[3]));
+            acc[r] += s * (__half2float(__low2half(hs)) + __half2float(__high2half(hs)));
+        }
+    }
+    #pragma unroll
+    for (int r = 0; r < RPW; ++r) {
+        float a = acc[r];
+        #pragma unroll
+        for (int off = 16; off; off >>= 1)
+            a += __shfl_down_sync(0xffffffff, a, off);
+        if (lane == 0) y[m0 + r] = __float2half(a);
+    }
+}
+
 // ---------------- host ----------------
 static void ref_gemv(const unsigned* w, const float* x, const float* s,
                      float* y, int M, int K) {
@@ -372,6 +486,14 @@ int main(int argc, char** argv) {
         gemv_v4<<<(M + rows_per_block - 1) / rows_per_block, BLOCK, K * 2>>>(
             (uint4*)dw2, dx, ds, dy, M, K); });
     check("v4");
+    float us5 = bench_us([&] {
+        gemv_v5<<<(M + rows_per_block - 1) / rows_per_block, BLOCK, K * 2>>>(
+            (uint4*)dw2, dx, ds, dy, M, K); });
+    check("v5");
+    float us5b = bench_us([&] {
+        gemv_v5b<<<(M + rows_per_block - 1) / rows_per_block, BLOCK>>>(
+            (uint4*)dw2, dx, ds, dy, M, K); });
+    check("v5b");
 
     printf("shape %dx%d  stream %.1f MB\n", M, K, stream_bytes / 1e6);
     printf("v0: %7.1f us  %6.0f GB/s  (%4.1f%% of achievable)\n",
@@ -384,5 +506,9 @@ int main(int argc, char** argv) {
            us3, stream_bytes / us3 / 1e3, 100.0 * stream_bytes / us3 / 1e3 / peak);
     printf("v4(RPW=%d,B=%d): %.1f us  %6.0f GB/s  (%4.1f%% of achievable)\n",
            RPW, BLOCK, us4, stream_bytes / us4 / 1e3, 100.0 * stream_bytes / us4 / 1e3 / peak);
+    printf("v5:  %7.1f us  %6.0f GB/s  (%4.1f%% of achievable)\n",
+           us5, stream_bytes / us5 / 1e3, 100.0 * stream_bytes / us5 / 1e3 / peak);
+    printf("v5b: %7.1f us  %6.0f GB/s  (%4.1f%% of achievable)\n",
+           us5b, stream_bytes / us5b / 1e3, 100.0 * stream_bytes / us5b / 1e3 / peak);
     return 0;
 }
