@@ -121,8 +121,16 @@ def _metric_value(kernel: dict, arch: Optional[str], clause: Clause):
     if clause.metric == "occupancy":
         if not arch or r.get("regs") is None:
             return None
+        # prefer the occupancy the report already computed with its full
+        # launch context (dynamic smem, carveout); recompute only when the
+        # clause asks for a different block size than the report used
+        rep_occ = kernel.get("occupancy") or {}
+        if rep_occ.get("threads_per_block") == clause.threads:
+            return rep_occ.get("occupancy_pct")
         occ = compute(lookup(arch), r["regs"], clause.threads,
-                      smem_static=r.get("smem_static") or 0)
+                      smem_static=r.get("smem_static") or 0,
+                      smem_dynamic=rep_occ.get("smem_dynamic") or 0,
+                      carveout_kb=rep_occ.get("carveout_kb"))
         return occ.occupancy_pct
     return None
 

@@ -237,21 +237,27 @@ def analyze_unit(
                                             peak_tflops, peak_gbs)
                 k["roofline"] = loops[:6]
                 if grid_blocks:
-                    # every block re-reads block-invariant data: worst case
-                    # (L2-cold) that traffic scales with the grid. Summed
-                    # over all loops — staging loops often hold the
-                    # invariant reads, not the hot loop.
+                    # Block-invariant reads are re-fetched by every block. In
+                    # the worst case (L2 cold between blocks) the invariant
+                    # portion moves grid_blocks times instead of once, so the
+                    # whole kernel's traffic inflates by
+                    #   (variant + grid_blocks*invariant) / (variant + invariant)
+                    # bounded by grid_blocks. Summed over all loops — staging
+                    # loops often hold the invariant reads, not the hot loop.
                     g = sum(row["est_global_bytes_per_warp_iter"] or 0
                             for row in loops)
                     inv = sum(row.get("est_block_invariant_bytes_per_warp_iter", 0)
                               for row in loops)
                     if g:
+                        frac = inv / g
                         k["grid_traffic"] = {
                             "grid_blocks": grid_blocks,
                             "invariant_bytes_per_warp_iter": inv,
-                            "invariant_fraction": round(inv / g, 3),
-                            "worst_amplification":
-                                round((g + (grid_blocks - 1) * inv) / g, 2),
+                            "invariant_fraction": round(frac, 3),
+                            # traffic inflation vs one cold read of the
+                            # invariant data, bounded by grid_blocks
+                            "worst_amplification": round(
+                                (1 - frac) + grid_blocks * frac, 2),
                         }
                 k["access"] = {
                     key: acc[key] for key in (
@@ -259,8 +265,20 @@ def analyze_unit(
                         "unanalyzed_by_reason", "block_invariant_read_bytes",
                         "worst_bank_conflict_ways",
                         "conflicted_shared_accesses", "uncoalesced_global_accesses",
+                        "dataflow_converged", "unreached_blocks",
                     )
                 }
+                if not acc["dataflow_converged"]:
+                    notes.append(
+                        "dataflow did not converge — access verdicts may be "
+                        "conservative (VARYING) for loop-carried addresses"
+                    )
+                if acc["unreached_blocks"]:
+                    notes.append(
+                        f"{acc['unreached_blocks']} basic block(s) unreachable "
+                        "from the entry in this analysis — their accesses are "
+                        "not covered"
+                    )
                 k["access"]["by_site"] = acc["by_site"][:30]
                 if k_dims[0] % 32:
                     notes.append(
