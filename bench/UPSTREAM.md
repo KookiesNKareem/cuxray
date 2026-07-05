@@ -38,11 +38,24 @@ their contributing rules.
 Cubins: box `/root/ggmlx/libggml-cuda.37.sm_86.cubin` (extracted from
 `build/bin/libggml-cuda.so`); analysis scripts `/root/ggmlx/*.py`.
 
-### Tool gap found while analyzing their kernels
-Most weight-load addresses in mmvq are unanalyzable: 64-bit address pairs
-built with `LEA.HI.X` carry chains (.X carry-in currently poisons the
-dataflow). Tracking register pairs through the carry would unlock
-coalescing verdicts on most real-world kernels' global loads.
+### Tool gaps found while analyzing their kernels (partially fixed)
+Sliced the actual failing chains (tests/tools-style scripts on box:
+/root/{slice,origin,prol}.py). Root causes were NOT LEA.HI.X:
+- predicated FIRST writes joined against uninitialized garbage, poisoning
+  both halves of `@P/@!P` pairs — fixed (strong update on first write);
+- `LEA.HI` (signed-div idiom `x + (x>>31)`) unmodeled — fixed exactly;
+- `SHF.R.*.HI` source-in-high-word form — fixed earlier the same day.
+Remaining barrier (documented, next session): a control-flow merge in the
+warp-uniform MoE channel/fastdiv math where one predicated path loses
+uniformity; it dominates mmvq's remaining unanalyzed count (30 of 36 in
+q4_0). All fixes unit-tested (130 pass); v7 analysis unaffected.
+
+### Fork ready for the PR
+github.com/KookiesNKareem/llama.cpp, branch `cuda-mmvq-q4k-scales`
+(created at upstream master 7a63fde). Kareem authors the change there;
+the box clone /root/llama.cpp has the build + bench setup but carries a
+local test-shapes patch in tests/test-backend-ops.cpp — do NOT include
+that in the PR branch.
 
 ## Track 2: vLLM batch-1 GPTQ GEMV (full assistance OK)
 
