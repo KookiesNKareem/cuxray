@@ -216,6 +216,190 @@ __global__ void to_out(const float* __restrict__ y32, T* __restrict__ y,
     if (i < total) y[i] = (T)y32[i];
 }
 
+
+// ===========================================================================
+// W4A8 path (CompressedTensorsW4A8Int semantics): s4 weights (stored
+// offset-binary after repack) x dynamically per-token-quantized int8
+// activations. Integer dot via dp4a; y = a_scale[token] * sum_g w_scale *
+// (isum - 8*sum(q_x)). Layout: u32 = 8 weights, byte b lo-nibble = w[8u+b],
+// hi-nibble = w[8u+4+b] (dp4a-aligned).
+
+// Interleaved int8-tile swizzle for NC>1: units are NC*4-byte blocks (one
+// int per column); lanes stride 8 blocks -> same bank-0 collapse as the
+// fp16 tiles, same alignment-preserving fix.
+template <int NC>
+__device__ __forceinline__ unsigned swA(unsigned off) {
+    if (NC == 1) return off ^ ((off >> 3) & 0x10u);   // Swizzle<1,4,3> (v7)
+    if (NC == 2) return off ^ ((off >> 4) & 0x78u);
+    if (NC == 4) return off ^ ((off >> 4) & 0x70u);
+    if (NC == 8) return off ^ ((off >> 4) & 0x60u);
+    return off;
+}
+
+template <typename T>
+__global__ void quant_max(const T* __restrict__ x, float* __restrict__ xmax,
+                          int K, int ldx) {
+    const int tok = blockIdx.x;
+    const int slice = (K + gridDim.y * blockDim.x - 1) / (gridDim.y * blockDim.x);
+    const int i0 = (blockIdx.y * blockDim.x + threadIdx.x) * slice;
+    float m = 0.f;
+    for (int i = i0; i < min(K, i0 + slice); ++i)
+        m = fmaxf(m, fabsf(dq_traits<T>::tof(x[(size_t)tok * ldx + i])));
+    #pragma unroll
+    for (int off = 16; off; off >>= 1)
+        m = fmaxf(m, __shfl_xor_sync(0xffffffff, m, off));
+    if ((threadIdx.x & 31) == 0)
+        atomicMax((int*)&xmax[tok], __float_as_int(m));  // nonneg: bit-safe
+}
+
+template <typename T>
+__global__ void quant_apply(const T* __restrict__ x, const float* __restrict__ xmax,
+                            signed char* __restrict__ xq, int K, int ldx) {
+    const int tok = blockIdx.x;
+    const float mx = xmax[tok];
+    const float inv = mx > 0.f ? 127.f / mx : 0.f;
+    const int per = (K + gridDim.y * blockDim.x - 1) / (gridDim.y * blockDim.x);
+    const int i0 = (blockIdx.y * blockDim.x + threadIdx.x) * per;
+    for (int i = i0; i < min(K, i0 + per); ++i) {
+        int q = __float2int_rn(dq_traits<T>::tof(x[(size_t)tok * ldx + i]) * inv);
+        xq[(size_t)tok * K + i] = (signed char)max(-127, min(127, q));
+    }
+}
+
+template <typename T, int NC, int SPLITS, int R>
+__global__ void __launch_bounds__(BLOCK)
+gemv_w4a8(const uint4* __restrict__ w, const signed char* __restrict__ xq,
+          const float* __restrict__ xs_tok,
+          const T* __restrict__ scales, float* __restrict__ ypartial,
+          T* __restrict__ y, int M, int K, int tk) {
+    extern __shared__ char smem[];   // NC interleaved int8 x tiles
+
+    const int warps = blockDim.x / 32;
+    const int warp  = threadIdx.x / 32;
+    const int lane  = threadIdx.x & 31;
+    const int m0    = (blockIdx.x * warps + warp) * R;
+    const int ntiles = (K + tk - 1) / tk;
+    const int tiles_per = (ntiles + SPLITS - 1) / SPLITS;
+    const int kbeg = blockIdx.y * tiles_per * tk;
+    const int kend = min(K, kbeg + tiles_per * tk);
+    const int chunks_row = K / 32;
+
+    float acc[R][NC];
+    #pragma unroll
+    for (int r = 0; r < R; ++r)
+        #pragma unroll
+        for (int nc = 0; nc < NC; ++nc) acc[r][nc] = 0.f;
+
+    for (int kt = kbeg; kt < kend; kt += tk) {
+        const int tlen = min(tk, kend - kt);
+        for (int i = threadIdx.x; i < NC * tlen / 4; i += blockDim.x) {
+            int nc, ii, off;
+            if (NC == 1) { nc = 0; ii = i; off = (int)swA<1>((unsigned)(4 * ii)); }
+            else {
+                ii = i / NC; nc = i % NC;
+                off = (int)swA<NC>((unsigned)(ii * NC * 4)) + nc * 4;
+            }
+            *(int*)(smem + off) =
+                ((const int*)(xq + (size_t)nc * K + kt))[ii];
+        }
+        __syncthreads();
+
+        if (m0 < M) {
+            const int c0 = kt / 32, c1 = (kt + tlen) / 32;
+            // Pointer-march: per c += 32 the tile byte offset advances by
+            // exactly 1024*NC and every swizzle variant sources its XOR bits
+            // at or above that stride for NC != 2, so the swizzled address
+            // advances linearly too. NC==2 (bit 7 in the mask) recomputes.
+            const int j00 = (c0 + lane) * 32 - kt;         // byte offset in tile
+            const char* xp0;   // swizzled position of the chunk's low int4
+            const char* xp1;   // ... and of its high int4 (position ^ 16)
+            // (marched by 1024 B per chunk below)
+            if (NC == 1) {
+                const unsigned off = swA<1>((unsigned)j00);
+                xp0 = smem + off;
+                xp1 = smem + (off ^ 16u);
+            } else {
+                xp0 = smem + swA<NC>((unsigned)(j00 * NC));
+                xp1 = xp0;
+            }
+            const T* scp[R];
+            const uint4* wp[R];
+            #pragma unroll
+            for (int r = 0; r < R; ++r) {
+                scp[r] = scales + (size_t)(m0 + r) * (K / G) + (c0 + lane) * 32 / G;
+                wp[r] = w + (size_t)(m0 + r) * chunks_row + c0 + lane;
+            }
+            const int nchunks = (c1 - c0 - lane + 31) / 32;
+            for (int it = 0; it < nchunks; ++it) {
+                uint4 q[R];
+                #pragma unroll
+                for (int r = 0; r < R; ++r)
+                    if (m0 + r < M)
+                        q[r] = __ldcs(wp[r]);
+                int xw[8][NC];
+                if (NC == 1) {
+                    // the swizzle swaps a chunk's int4 halves for lanes with
+                    // the flip bit set; the partner half is always at
+                    // (swizzled offset ^ 16), which marches linearly too
+                    const int4 xa = *(const int4*)xp0;
+                    const int4 xb = *(const int4*)xp1;
+                    xw[0][0] = xa.x; xw[1][0] = xa.y; xw[2][0] = xa.z; xw[3][0] = xa.w;
+                    xw[4][0] = xb.x; xw[5][0] = xb.y; xw[6][0] = xb.z; xw[7][0] = xb.w;
+                } else {
+                    const int jb = (j00 + it * 1024) * NC;
+                    #pragma unroll
+                    for (int j = 0; j < 8; ++j) {
+                        const char* base = smem + swA<NC>((unsigned)(jb + j * NC * 4));
+                        #pragma unroll
+                        for (int nc = 0; nc < NC; ++nc)
+                            xw[j][nc] = *(const int*)(base + nc * 4);
+                    }
+                }
+                #pragma unroll
+                for (int r = 0; r < R; ++r) {
+                    if (m0 + r >= M) break;
+                    const float sw = dq_traits<T>::tof(scp[r][0]);
+                    const unsigned qw[4] = {q[r].x, q[r].y, q[r].z, q[r].w};
+                    #pragma unroll
+                    for (int nc = 0; nc < NC; ++nc) {
+                        int isum = 0;
+                        #pragma unroll
+                        for (int u = 0; u < 4; ++u) {
+                            // nibbles to byte-high: bytes are 16*s4, exact
+                            const unsigned lo = (qw[u] << 4) & 0xF0F0F0F0u;
+                            const unsigned hi = qw[u] & 0xF0F0F0F0u;
+                            isum = __dp4a((int)lo, xw[2 * u][nc], isum);
+                            isum = __dp4a((int)hi, xw[2 * u + 1][nc], isum);
+                        }
+                        acc[r][nc] += sw * (float)isum;   // sw pre-divided by 16
+                    }
+                }
+                #pragma unroll
+                for (int r = 0; r < R; ++r) { wp[r] += 32; scp[r] += 8; }
+                if (NC == 1) { xp0 += 1024; xp1 += 1024; }
+            }
+        }
+        __syncthreads();
+    }
+
+    #pragma unroll
+    for (int r = 0; r < R; ++r) {
+        if (m0 + r >= M) break;
+        #pragma unroll
+        for (int nc = 0; nc < NC; ++nc) {
+            float a = acc[r][nc];
+            #pragma unroll
+            for (int off = 16; off; off >>= 1)
+                a += __shfl_down_sync(0xffffffff, a, off);
+            if (lane == 0) {
+                const float out = a * (xs_tok[nc] * (1.f / 127.f));
+                if (SPLITS == 1) y[(size_t)nc * M + m0 + r] = (T)out;
+                else atomicAdd(&ypartial[(size_t)nc * M + m0 + r], out);
+            }
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Host: GPTQ generation, repack, fp64 reference, graph timing.
 
@@ -263,6 +447,7 @@ static void ref_gemv_gptq(const unsigned* qweight, const float* scales,
             __FILE__, __LINE__); exit(1); } } while (0)
 
 cudaStream_t g_cap_stream = 0;
+static bool g_fast = false;
 
 static float bench_us(void (*fn)(void*), void* ud, int iters = 200) {
     cudaStream_t s; CK(cudaStreamCreate(&s));
@@ -287,6 +472,116 @@ static float bench_us(void (*fn)(void*), void* ud, int iters = 200) {
 
 static double host_tof(half v) { return __half2float(v); }
 static double host_tof(__nv_bfloat16 v) { return __bfloat162float(v); }
+
+
+// ---- W4A8 host: s4 weight gen, repack, reference, launcher ---------------
+static void make_s4(signed char* wq, float* scales, int k, int n) {
+    for (long i = 0; i < (long)n * k; ++i) wq[i] = (signed char)(rand() % 16 - 8);
+    for (long i = 0; i < (long)n * (k / G); ++i)
+        scales[i] = (rand() % 900 + 100) / 1000.f;   // [n][k/G] row-major
+}
+
+// raw s4 nibbles in the dp4a byte-nibble layout, row-major [n][k/8].
+// The kernel shifts nibbles to the byte's high half: bytes become 16*s4,
+// exact under dp4a, with the /16 folded into the weight scales.
+static void repack_s4(const signed char* wq, unsigned* out, int k, int n) {
+    for (int j = 0; j < n; ++j)
+        for (int u = 0; u < k / 8; ++u) {
+            unsigned dst = 0;
+            for (int b = 0; b < 4; ++b) {
+                const unsigned lo = (unsigned)wq[(size_t)j * k + 8 * u + b];
+                const unsigned hi = (unsigned)wq[(size_t)j * k + 8 * u + 4 + b];
+                dst |= (lo & 0xF) << (8 * b);
+                dst |= (hi & 0xF) << (8 * b + 4);
+            }
+            out[(size_t)j * (k / 8) + u] = dst;
+        }
+}
+
+// reference with the kernel's own activation-quant policy (per-token int8)
+static void ref_w4a8(const signed char* wq, const float* scales,
+                     const float* x, double* yref, int k, int n, int nc,
+                     int ldx) {
+    for (int col = 0; col < nc; ++col) {
+        float mx = 0.f;
+        for (int i = 0; i < k; ++i) mx = fmaxf(mx, fabsf(x[(size_t)col * ldx + i]));
+        const float sx = mx / 127.f, inv = mx > 0.f ? 127.f / mx : 0.f;
+        for (int j = 0; j < n; ++j) {
+            double accd = 0;
+            for (int i = 0; i < k; ++i) {
+                int qx = (int)rintf(x[(size_t)col * ldx + i] * inv);
+                qx = qx < -127 ? -127 : (qx > 127 ? 127 : qx);
+                accd += (double)wq[(size_t)j * k + i]
+                        * scales[(size_t)j * (k / G) + i / G] * qx;
+            }
+            yref[(size_t)col * n + j] = accd * sx;
+        }
+    }
+}
+
+template <typename T, int NC, int SPLITS = 1>
+struct LaunchA8 {
+    static constexpr int R = NC >= 8 ? 1 : RPW;
+    const uint4* w; const T* x; const T* sc;
+    signed char* xq; float* xs; int* xsum;
+    float* y32; T* y; int M, K, ldx;
+    static void run(void* p) {
+        auto* a = (LaunchA8*)p;
+        const int rows_per_block = (BLOCK / 32) * R;
+        dim3 grid((a->M + rows_per_block - 1) / rows_per_block, SPLITS);
+        int tk = ((size_t)NC * a->K <= 96 * 1024 && SPLITS == 1) ? a->K : TK;
+        size_t smem = (size_t)NC * tk;
+        cudaFuncSetAttribute(gemv_w4a8<T, NC, SPLITS, R>,
+                             cudaFuncAttributeMaxDynamicSharedMemorySize,
+                             99 * 1024);
+        cudaMemsetAsync(a->xs, 0, NC * 4, g_cap_stream);
+        quant_max<T><<<dim3(NC, 24), 256, 0, g_cap_stream>>>(
+            a->x, a->xs, a->K, a->ldx);
+        quant_apply<T><<<dim3(NC, 24), 256, 0, g_cap_stream>>>(
+            a->x, a->xs, a->xq, a->K, a->ldx);
+        if (SPLITS > 1)
+            cudaMemsetAsync(a->y32, 0, sizeof(float) * NC * a->M, g_cap_stream);
+        gemv_w4a8<T, NC, SPLITS, R><<<grid, BLOCK, smem, g_cap_stream>>>(
+            a->w, a->xq, a->xs, a->sc, a->y32, a->y, a->M, a->K, tk);
+        if (SPLITS > 1)
+            to_out<T><<<(NC * a->M + 255) / 256, 256, 0, g_cap_stream>>>(
+                a->y32, a->y, NC * a->M);
+    }
+};
+
+template <typename T, int NC, int SPLITS = 1>
+static void run_case_a8(const char* tag, const uint4* dw, const T* dx,
+                        const T* dsc, signed char* dxq, float* dxs, int* dxsum,
+                        float* dy32, T* dy, int M, int K, int ldx,
+                        const double* ref, double rms) {
+    LaunchA8<T, NC, SPLITS> a{dw, dx, dsc, dxq, dxs, dxsum, dy32, dy, M, K, ldx};
+    if (!g_fast) {
+        LaunchA8<T, NC, SPLITS>::run(&a);
+        CK(cudaGetLastError());
+        CK(cudaDeviceSynchronize());
+        T* hy = (T*)malloc(sizeof(T) * NC * M);
+        CK(cudaMemcpy(hy, dy, sizeof(T) * NC * M, cudaMemcpyDeviceToHost));
+        double maxrel = 0;
+        for (long i = 0; i < (long)NC * M; ++i) {
+            const double got = host_tof(hy[i]);
+            maxrel = fmax(maxrel, fabs(got - ref[i]) /
+                          fmax(fabs(ref[i]), 0.05 * rms));
+        }
+        const float us = bench_us(LaunchA8<T, NC, SPLITS>::run, &a);
+        const double bytes = (double)M * K / 2 + (double)M * (K / G) * 2
+                           + (double)NC * K * 2 + (double)NC * M * 2;
+        printf("%-22s NC=%d  %8.1f us  %6.0f GB/s  max_rel %.4f %s\n",
+               tag, NC, us, bytes / us / 1e3, maxrel,
+               maxrel < 0.03 ? "OK" : "FAIL");
+        free(hy);
+    } else {
+        const float us = bench_us(LaunchA8<T, NC, SPLITS>::run, &a);
+        const double bytes = (double)M * K / 2 + (double)M * (K / G) * 2
+                           + (double)NC * K * 2 + (double)NC * M * 2;
+        printf("%-22s NC=%d  %8.1f us  %6.0f GB/s  max_rel -1 SKIP\n",
+               tag, NC, us, bytes / us / 1e3);
+    }
+}
 
 template <typename T, int NC, int SPLITS = 1>
 struct Launch {
@@ -315,8 +610,6 @@ struct Launch {
                 a->y32, a->y, NC * a->M);
     }
 };
-
-static bool g_fast = false;
 
 template <typename T, int NC, int SPLITS = 1>
 static void run_case(const char* tag, const uint4* dw, const T* dx,
@@ -428,5 +721,37 @@ int main(int argc, char** argv) {
     if (!g_fast) ref_gemv_gptq(hq, hsbf, hx, ref, K, M, NCMAX, ldx);
     run_case<__nv_bfloat16, 1>("bf16", dw, dxbf, dscbf, dy32, dybf, M, K, ldx, ref, rms);
     run_case<__nv_bfloat16, 4>("bf16", dw, dxbf, dscbf, dy32, dybf, M, K, ldx, ref, rms);
+
+    // ---------------- W4A8 (CompressedTensorsW4A8Int semantics) ----------
+    signed char* hwq = (signed char*)malloc((size_t)M * K);
+    float* hsa8 = (float*)malloc((size_t)M * (K / G) * 4);
+    make_s4(hwq, hsa8, K, M);
+    unsigned* hwp = (unsigned*)malloc((size_t)M * K / 2);
+    repack_s4(hwq, hwp, K, M);
+    uint4* dwa8; CK(cudaMalloc(&dwa8, (size_t)M * K / 2));
+    CK(cudaMemcpy(dwa8, hwp, (size_t)M * K / 2, cudaMemcpyHostToDevice));
+    for (int j = 0; j < M; ++j)
+        for (int g2 = 0; g2 < K / G; ++g2)
+            hsc16[(size_t)j * (K / G) + g2] =
+                __float2half(hsa8[(size_t)j * (K / G) + g2] / 16.f);
+    CK(cudaMemcpy(dsc16, hsc16, (size_t)M * (K / G) * 2, cudaMemcpyHostToDevice));
+    signed char* dxq; float* dxs; int* dxsum;
+    CK(cudaMalloc(&dxq, (size_t)NCMAX * K));
+    CK(cudaMalloc(&dxs, NCMAX * 4));
+    CK(cudaMalloc(&dxsum, (size_t)NCMAX * (K / 32) * 4));
+    if (!g_fast) {
+        for (long i = 0; i < (long)NCMAX * K; ++i)
+            hx[i] = __half2float(hx16[i]);   // fp16-rounded x for the ref
+        ref_w4a8(hwq, hsa8, hx, ref, K, M, NCMAX, ldx);
+        rms = 0;
+        for (int j = 0; j < M; ++j) rms += ref[j] * ref[j];
+        rms = sqrt(rms / M);
+    }
+    run_case_a8<half, 1>("w4a8 fp16", dwa8, dx16, dsc16, dxq, dxs, dxsum, dy32, dy16, M, K, ldx, ref, rms);
+    run_case_a8<half, 2>("w4a8 fp16", dwa8, dx16, dsc16, dxq, dxs, dxsum, dy32, dy16, M, K, ldx, ref, rms);
+    run_case_a8<half, 4>("w4a8 fp16", dwa8, dx16, dsc16, dxq, dxs, dxsum, dy32, dy16, M, K, ldx, ref, rms);
+    run_case_a8<half, 8>("w4a8 fp16", dwa8, dx16, dsc16, dxq, dxs, dxsum, dy32, dy16, M, K, ldx, ref, rms);
+    run_case_a8<half, 1, 4>("w4a8 fp16 splitK4", dwa8, dx16, dsc16, dxq, dxs, dxsum, dy32, dy16, M, K, ldx, ref, rms);
     return 0;
+
 }
