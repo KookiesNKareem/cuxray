@@ -291,3 +291,33 @@ class TestBlockInvariance:
         loads = [a for a in res2["accesses"]
                  if a["space"] == "global" and a["opcode"].startswith("LDG")]
         assert loads and not any(a.get("block_invariant") for a in loads)
+
+
+class TestDataflowStep:
+    """Direct step() semantics for patterns real compilers emit."""
+
+    def _tids(self):
+        return lv.tid_vectors((32, 1, 1))
+
+    def test_predicated_first_write_is_strong(self):
+        from cuxray.analyze.dataflow import State, step
+        st = State()
+        step(sass.Instruction(0, "MOV", "R8, 0x4", predicate="@!P0"), st, self._tids())
+        assert st.get("R8").kind == lv.PURE  # uninit old value must not poison
+        step(sass.Instruction(16, "MOV", "R8, 0x8", predicate="@P0"), st, self._tids())
+        assert st.get("R8").kind == lv.MIXED  # overwrite still joins
+
+    def test_lea_hi_signed_div_idiom(self):
+        from cuxray.analyze.dataflow import State, step
+        st = State()
+        st.set("R4", lv.pure(range(32)))
+        step(sass.Instruction(0, "LEA.HI", "R10, R4, R4, RZ, 0x1"), st, self._tids())
+        # x + (x >> 31) == x for non-negative lane values
+        assert st.get("R10").vec == tuple(range(32))
+
+    def test_shf_r_hi_source_in_high_word(self):
+        from cuxray.analyze.dataflow import State, step
+        st = State()
+        st.set("R28", lv.pure(range(0, 64, 2)))
+        step(sass.Instruction(0, "SHF.R.U32.HI", "R32, RZ, 0x3, R28"), st, self._tids())
+        assert st.get("R32").vec == tuple((2 * l) >> 3 for l in range(32))
