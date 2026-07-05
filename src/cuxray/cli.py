@@ -281,40 +281,62 @@ def _kernel_summary(k: dict) -> dict:
 @click.option("--datapath", default="simt-int", help="simt-int/simt-fp/tensor")
 @click.option("--sms", type=int, required=True, help="device SM count")
 @click.option("--clock", type=float, required=True, help="sustained clock GHz")
+@click.option("--cc", default=None, help="compute capability e.g. sm_80 (for the MAC peak)")
 @click.option("--peak-gbs", type=float, required=True, help="measured achievable DRAM GB/s")
-@click.option("--e-sat", type=float, default=0.95, help="saturating efficiency (calibrate)")
-@click.option("--t-fixed", type=float, default=0.0, help="fixed per-launch µs (calibrate)")
 @click.option("--calibrate", type=click.Path(exists=True), default=None,
-              help="JSON [[ideal_us, measured_us], ...] to fit (e_sat, t_fixed)")
+              help="OPTIONAL empirical fit: JSON [[ideal_us, measured_us], ...] of "
+                   "the SAME kernel family on THIS device — adds an ESTIMATE line")
 @click.option("--json", "as_json", is_flag=True)
 @click.option("--output", "-o", default=None)
-def perf(dram_bytes, macs, precision, datapath, sms, clock, peak_gbs,
-         e_sat, t_fixed, calibrate, as_json, output):
-    """Calibrated-roofline wall-clock estimate. Supply the launch's total
-    work (--bytes, --macs) and device constants; (e_sat, t_fixed) come from
-    --calibrate (a few measurements) or defaults. Predicts µs without a GPU."""
-    from .analyze.perfmodel import Calibration, Device, Work, fit, predict
+def roofline(dram_bytes, macs, precision, datapath, sms, clock, cc, peak_gbs,
+             calibrate, as_json, output):
+    """Roofline floor for a launch: the fastest this work can run on this
+    device, and whether it is memory- or compute-bound. A FLOOR, not a
+    prediction — a real kernel runs slower by its efficiency. With
+    --calibrate (measurements of the same family on this device) it also
+    prints a fitted wall-clock ESTIMATE, clearly labelled as empirical."""
+    from .analyze.perfmodel import (Calibration, Device, Work, fit, ideal_us,
+                                    predict)
+    from .archspec import lookup
 
-    calib = Calibration(e_sat=e_sat, t_fixed_us=t_fixed)
+    dev_cc = None
+    if cc:
+        try:
+            dev_cc = lookup(cc).cc
+        except (KeyError, ValueError):
+            pass
+    dev = Device(sms=sms, clock_ghz=clock, achievable_gbs=peak_gbs, cc=dev_cc)
+    work = Work(dram_bytes=dram_bytes, macs=int(macs), precision=precision,
+                datapath=datapath)
+    base = ideal_us(work, dev)
+    out = {"schema": "cuxray.roofline/1",
+           "t_ideal_us": round(base["t_ideal_us"], 3),
+           "t_mem_ideal_us": round(base["t_mem_ideal_us"], 3),
+           "t_compute_ideal_us": round(base["t_compute_ideal_us"], 3),
+           "bound": base["bound"]}
+    estimate = None
     if calibrate:
         samples = [(float(a), float(b)) for a, b in
                    json.loads(Path(calibrate).read_text())]
         calib = fit(samples)
-    dev = Device(sms=sms, clock_ghz=clock, achievable_gbs=peak_gbs)
-    work = Work(dram_bytes=dram_bytes, macs=int(macs), precision=precision,
-                datapath=datapath)
-    r = predict(work, dev, calib)
-    r["calibration"] = {"e_sat": calib.e_sat, "t_fixed_us": calib.t_fixed_us}
-    out = {"schema": "cuxray.perf/1", **r}
+        estimate = predict(work, dev, calib)
+        out["estimate_us"] = estimate["us"]
+        out["calibration"] = {"e_sat": calib.e_sat, "t_fixed_us": calib.t_fixed_us,
+                              "n_samples": len(samples)}
 
     def human():
-        console.print(f"[bold]{r['us']} µs[/]  [dim]({r['bound']}-bound)[/]")
-        console.print(f"  roofline floor: {r['t_ideal_us']} µs "
-                      f"(mem {r['t_mem_ideal_us']}, compute {r['t_compute_ideal_us']})")
-        console.print(f"  calibration: e_sat={calib.e_sat}, "
-                      f"t_fixed={calib.t_fixed_us} µs")
-        console.print("[dim]estimate — rank candidates with this, verify the "
-                      "top few on hardware[/]")
+        console.print(f"[bold]roofline floor: {out['t_ideal_us']} µs[/]  "
+                      f"[dim]({out['bound']}-bound)[/]")
+        console.print(f"  memory {out['t_mem_ideal_us']} µs · "
+                      f"compute {out['t_compute_ideal_us']} µs")
+        console.print("[dim]a lower bound — a real kernel runs slower by its "
+                      "efficiency[/]")
+        if estimate:
+            console.print(f"\n  [yellow]empirical estimate: ~{estimate['us']} µs[/] "
+                          f"[dim](fitted e_sat={out['calibration']['e_sat']}, "
+                          f"t_fixed={out['calibration']['t_fixed_us']}µs from "
+                          f"{out['calibration']['n_samples']} measurements of this "
+                          "family — NOT a static result; verify on hardware)[/]")
 
     _emit(out, as_json, output, human)
     sys.exit(0)
