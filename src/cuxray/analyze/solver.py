@@ -28,6 +28,7 @@ class Pattern:
     width: int
     label: str = ""          # e.g. "bank_conflict.cu:19 LDS"
     ways_before: int = 1
+    site: str = ""           # source file:line — tile-clustering key
 
 
 @dataclass
@@ -130,5 +131,66 @@ def patterns_from_accesses(accesses: list[dict]) -> list[Pattern]:
             vec=a["_vec"], width=a["width"],
             label=f"{loc} {a['opcode'].split('.')[0]}",
             ways_before=a.get("conflict_ways", 1),
+            site=loc,
         ))
     return out
+
+
+def solve_grouped(patterns: list[Pattern], **kw) -> dict:
+    """Tile-scoped solve: independent shared tiles can take independent
+    swizzles. Cluster accesses by source site, solve each cluster, then
+    merge clusters a single swizzle already serves.
+
+    Returns {"global": [Solution]|None, "groups": [...], "unsolved": [...]}.
+    'global' is populated (and 'groups' collapses to one) when one swizzle
+    cleans every access — the strictly-better outcome. Otherwise each group
+    names its sites and its own verified swizzle; swizzles apply per tile
+    (per shared-memory region), so distinct groups don't interfere.
+    """
+    if not patterns:
+        return {"global": [], "groups": [], "unsolved": []}
+
+    global_sol = solve(patterns, **kw)
+    if global_sol:
+        return {
+            "global": global_sol,
+            "groups": [{
+                "sites": sorted({p.site for p in patterns}),
+                "solutions": global_sol,
+            }],
+            "unsolved": [],
+        }
+
+    # cluster by source site, then solve each cluster on its own
+    by_site: dict[str, list[Pattern]] = {}
+    for p in patterns:
+        by_site.setdefault(p.site or p.label, []).append(p)
+
+    solved: list[tuple[list[str], list[Pattern], list[Solution]]] = []
+    unsolved_sites = []
+    for site, pats in by_site.items():
+        sols = solve(pats, **kw)
+        if sols:
+            solved.append(([site], pats, sols))
+        else:
+            unsolved_sites.append(site)
+
+    # merge clusters whose solution sets overlap — one swizzle serving two
+    # tiles is simpler to apply and documents that they can share a layout
+    merged: list[tuple[list[str], list[Pattern], list[Solution]]] = []
+    for sites, pats, sols in solved:
+        placed = False
+        for i, (msites, mpats, msols) in enumerate(merged):
+            shared = [s for s in msols
+                      if any(s.b == o.b and s.m == o.m and s.s == o.s
+                             for o in sols)]
+            if shared:
+                merged[i] = (msites + sites, mpats + pats, shared)
+                placed = True
+                break
+        if not placed:
+            merged.append((sites, pats, sols))
+
+    groups = [{"sites": sorted(sites), "solutions": sols}
+              for sites, _pats, sols in merged]
+    return {"global": None, "groups": groups, "unsolved": sorted(unsolved_sites)}

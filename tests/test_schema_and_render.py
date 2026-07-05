@@ -75,3 +75,35 @@ class TestRender:
         d = diff_reports(old, improved)
         assert d["changed"] >= 1
         assert d["regressions"] == 0  # higher occupancy is not a regression
+
+
+def test_commands_schema_valid_json_and_covers_advise():
+    import json
+    from importlib.resources import files
+    text = files("cuxray.schema").joinpath("cuxray.commands.1.json").read_text()
+    doc = json.loads(text)  # must parse
+    assert doc["advise"]["properties"]["schema"]["const"] == "cuxray.advise/1"
+    assert doc["solve"]["properties"]["results"]["items"]["properties"]["groups"]
+    assert doc["sched"]["properties"]["results"]
+
+
+def test_advise_json_matches_schema_shape():
+    from cuxray.advise import advise
+    k = {
+        "resources": {"regs": 60},
+        "spills": {"store_instructions": 2, "load_instructions": 1,
+                   "store_bytes": 8, "load_bytes": 4,
+                   "by_line": [{"file": "k.cu", "line": 3, "loop_depth": 0}]},
+        "occupancy": {"occupancy_pct": 50.0, "limiter": "registers",
+                      "threads_per_block": 256, "cliffs": []},
+        "access": {"analyzed_count": 5, "unanalyzed_count": 0,
+                   "dataflow_converged": True, "unreached_blocks": 0,
+                   "conflicted_shared_accesses": 0,
+                   "uncoalesced_global_accesses": 0,
+                   "block_invariant_read_bytes": 0},
+        "roofline": [],
+    }
+    for a in advise(k):
+        assert set(a) >= {"severity", "title", "detail", "confidence"}
+        assert a["severity"] in ("high", "medium", "low")
+        assert a["confidence"] in ("high", "medium", "low", "unknown")

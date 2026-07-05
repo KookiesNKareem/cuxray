@@ -1,0 +1,108 @@
+	.headerflags	@"EF_CUDA_TEXMODE_UNIFIED EF_CUDA_64BIT_ADDRESS EF_CUDA_SM86 EF_CUDA_VIRTUAL_SM(EF_CUDA_SM86)"
+	.elftype	@"ET_EXEC"
+
+
+//--------------------- .text._Z10chain_loopPffiPx --------------------------
+	.section	.text._Z10chain_loopPffiPx,"ax",@progbits
+	.sectioninfo	@"SHI_REGISTERS=14"
+	.align	128
+        .global         _Z10chain_loopPffiPx
+        .type           _Z10chain_loopPffiPx,@function
+        .size           _Z10chain_loopPffiPx,(.L_x_5 - _Z10chain_loopPffiPx)
+        .other          _Z10chain_loopPffiPx,@"STO_CUDA_ENTRY STV_DEFAULT"
+_Z10chain_loopPffiPx:
+.text._Z10chain_loopPffiPx:
+        /*0000*/                   MOV R1, c[0x0][0x28] ;
+        /*0010*/                   CS2R R2, SR_CLOCKLO ;
+        /*0020*/                   MOV R4, c[0x0][0x16c] ;
+        /*0030*/                   MOV R9, c[0x0][0x168] ;
+        /*0040*/                   ISETP.GE.AND P0, PT, R4, 0x1, PT ;
+        /*0050*/              @!P0 BRA `(.L_x_0) ;
+        /*0060*/                   IADD3 R0, R4.reuse, -0x1, RZ ;
+        /*0070*/                   LOP3.LUT R4, R4, 0x3, RZ, 0xc0, !PT ;
+        /*0080*/                   ISETP.GE.U32.AND P1, PT, R0, 0x3, PT ;
+        /*0090*/                   ISETP.NE.AND P0, PT, R4, RZ, PT ;
+        /*00a0*/                   MOV R0, c[0x0][0x168] ;
+        /*00b0*/                   MOV R9, c[0x0][0x168] ;
+        /*00c0*/              @!P1 BRA `(.L_x_1) ;
+        /*00d0*/                   IADD3 R5, -R4, c[0x0][0x16c], RZ ;
+        /*00e0*/                   MOV R9, c[0x0][0x168] ;
+.L_x_2:
+        /*00f0*/                   FFMA R9, R9, R0, 1 ;
+        /*0100*/                   IADD3 R5, R5, -0x4, RZ ;
+        /*0110*/                   FFMA R9, R9, R0, 2 ;
+        /*0120*/                   ISETP.NE.AND P1, PT, R5, RZ, PT ;
+        /*0130*/                   FFMA R9, R9, R0, 3 ;
+        /*0140*/                   FFMA R9, R9, R0, 4 ;
+        /*0150*/                   FFMA R9, R9, R0, 5 ;
+        /*0160*/                   FFMA R9, R9, R0, 6 ;
+        /*0170*/                   FFMA R9, R9, R0, 7 ;
+        /*0180*/                   FFMA R9, R9, R0, 8 ;
+        /*0190*/                   FFMA R9, R9, R0, 1 ;
+        /*01a0*/                   FFMA R9, R9, R0, 2 ;
+        /*01b0*/                   FFMA R9, R9, R0, 3 ;
+        /*01c0*/                   FFMA R9, R9, R0, 4 ;
+        /*01d0*/                   FFMA R9, R9, R0, 5 ;
+        /*01e0*/                   FFMA R9, R9, R0, 6 ;
+        /*01f0*/                   FFMA R9, R9, R0, 7 ;
+        /*0200*/                   FFMA R9, R9, R0, 8 ;
+        /*0210*/                   FFMA R9, R9, R0, 1 ;
+        /*0220*/                   FFMA R9, R9, R0, 2 ;
+        /*0230*/                   FFMA R9, R9, R0, 3 ;
+        /*0240*/                   FFMA R9, R9, R0, 4 ;
+        /*0250*/                   FFMA R9, R9, R0, 5 ;
+        /*0260*/                   FFMA R9, R9, R0, 6 ;
+        /*0270*/                   FFMA R9, R9, R0, 7 ;
+        /*0280*/                   FFMA R9, R9, R0, 8 ;
+        /*0290*/                   FFMA R9, R9, R0, 1 ;
+        /*02a0*/                   FFMA R9, R9, R0, 2 ;
+        /*02b0*/                   FFMA R9, R9, R0, 3 ;
+        /*02c0*/                   FFMA R9, R9, R0, 4 ;
+        /*02d0*/                   FFMA R9, R9, R0, 5 ;
+        /*02e0*/                   FFMA R9, R9, R0, 6 ;
+        /*02f0*/                   FFMA R9, R9, R0, 7 ;
+        /*0300*/                   FFMA R9, R9, R0, 8 ;
+        /*0310*/               @P1 BRA `(.L_x_2) ;
+.L_x_1:
+        /*0320*/              @!P0 BRA `(.L_x_0) ;
+.L_x_3:
+        /*0330*/                   FFMA R9, R9, R0, 1 ;
+        /*0340*/                   IADD3 R4, R4, -0x1, RZ ;
+        /*0350*/                   FFMA R9, R9, R0, 2 ;
+        /*0360*/                   ISETP.NE.AND P0, PT, R4, RZ, PT ;
+        /*0370*/                   FFMA R9, R9, R0, 3 ;
+        /*0380*/                   FFMA R9, R9, R0, 4 ;
+        /*0390*/                   FFMA R9, R9, R0, 5 ;
+        /*03a0*/                   FFMA R9, R9, R0, 6 ;
+        /*03b0*/                   FFMA R9, R9, R0, 7 ;
+        /*03c0*/                   FFMA R9, R9, R0, 8 ;
+        /*03d0*/               @P0 BRA `(.L_x_3) ;
+.L_x_0:
+        /*03e0*/                   CS2R R4, SR_CLOCKLO ;
+        /*03f0*/                   S2R R0, SR_TID.X ;
+        /*0400*/                   MOV R11, 0x4 ;
+        /*0410*/                   ULDC.64 UR4, c[0x0][0x118] ;
+        /*0420*/                   ISETP.NE.AND P0, PT, R0, RZ, PT ;
+        /*0430*/              @!P0 IADD3 R6, P1, -R2, R4, RZ ;
+        /*0440*/              @!P0 MOV R2, c[0x0][0x170] ;
+        /*0450*/              @!P0 IADD3.X R7, ~R3, R5, RZ, P1, !PT ;
+        /*0460*/                   IMAD.WIDE.U32 R4, R0, R11, c[0x0][0x160] ;
+        /*0470*/              @!P0 MOV R3, c[0x0][0x174] ;
+        /*0480*/              @!P0 STG.E.64 [R2.64], R6 ;
+        /*0490*/                   STG.E [R4.64], R9 ;
+        /*04a0*/                   EXIT ;
+.L_x_4:
+        /*04b0*/                   BRA `(.L_x_4);
+        /*04c0*/                   NOP;
+        /*04d0*/                   NOP;
+        /*04e0*/                   NOP;
+        /*04f0*/                   NOP;
+        /*0500*/                   NOP;
+        /*0510*/                   NOP;
+        /*0520*/                   NOP;
+        /*0530*/                   NOP;
+        /*0540*/                   NOP;
+        /*0550*/                   NOP;
+        /*0560*/                   NOP;
+        /*0570*/                   NOP;
+.L_x_5:

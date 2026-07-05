@@ -1,0 +1,23 @@
+{
+  "$comment": "Machine-checked hardware calibration records. Each entry pairs a cuxray static prediction (recomputed in CI from the recorded disassembly, no GPU needed) against a value measured on real hardware. tests/test_calibration.py replays each and asserts the prediction is within tolerance. To add a record: run the tool in tests/tools/, save the cubin + nvdisasm/cuobjdump outputs under recorded/, and append the measurement here.",
+  "records": [
+    {
+      "id": "sched-chain-loop-sm86",
+      "kind": "sched_cycles_per_iter",
+      "kernel": "_Z10chain_loopPffiPx",
+      "loop_label": ".L_x_3",
+      "gpu": "RTX A5000 (sm_86)",
+      "driver": "570.211.01",
+      "toolchain": "nvcc 12.9",
+      "harness": "tests/tools/validate_sched.cu",
+      "command": "cuxray sched calibration_sched.chain_loop.sm_86.cubin",
+      "measured": 34.25,
+      "measured_units": "cycles per source iteration (clock64, 1e6 iters)",
+      "predicted": 34,
+      "tolerance_pct": 5.0,
+      "recorded_gi": "calibration_sched.chain_loop.sm_86.gi.txt",
+      "recorded_sass": "calibration_sched.chain_loop.sm_86.sass.txt",
+      "recorded_cfg": "calibration_sched.chain_loop.sm_86.cfg.dot"
+    }
+  ]
+}

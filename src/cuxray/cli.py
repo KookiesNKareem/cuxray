@@ -293,10 +293,16 @@ def solve(path, threads, kernel_re, arch, as_json, output):
     Searches CUTLASS-style Swizzle<B,M,S> transforms and returns only
     layouts verified clean for every shared access in each kernel."""
     from .analyze.access import analyze_accesses
-    from .analyze.solver import patterns_from_accesses, solve as solve_layout
+    from .analyze.solver import patterns_from_accesses, solve_grouped
     from .parse import cfgdot, sass
     from .report import parse_block_dims
     from .ingest import ingest
+
+    def _sol_json(sol):
+        return {"cutlass": sol.cutlass, "cute_type": sol.cute_type,
+                "formula": sol.formula, "b": sol.b, "m": sol.m, "s": sol.s,
+                "cuda_snippet": sol.cuda_snippet(),
+                "per_pattern": sol.per_pattern}
 
     need_ptxas = str(path).endswith(".ptx")
     tc = _toolchain(need_ptxas)
@@ -325,21 +331,32 @@ def solve(path, threads, kernel_re, arch, as_json, output):
             conflicted = [p for p in patterns if p.ways_before > 1]
             if not conflicted:
                 continue
-            sols = solve_layout(patterns)
+            grouped = solve_grouped(patterns)
             results.append({
                 "unit": unit.label, "kernel": name,
                 "conflicted_sites": len(conflicted),
                 "shared_accesses": len(patterns),
-                "solutions": [{
-                    "cutlass": sol.cutlass, "cute_type": sol.cute_type,
-                    "formula": sol.formula,
-                    "b": sol.b, "m": sol.m, "s": sol.s,
-                    "cuda_snippet": sol.cuda_snippet(),
-                    "per_pattern": sol.per_pattern,
-                } for sol in sols],
+                "global": [_sol_json(s) for s in (grouped["global"] or [])],
+                "groups": [{
+                    "sites": grp["sites"],
+                    "solutions": [_sol_json(s) for s in grp["solutions"]],
+                } for grp in grouped["groups"]],
+                "unsolved_sites": grouped["unsolved"],
             })
 
     doc = {"schema": "cuxray.solve/1", "results": results}
+
+    def _print_group(grp, scope):
+        sols = grp["solutions"]
+        best = sols[0]
+        console.print(f"  [green]{scope}:[/] [bold]{best['cutlass']}[/]  "
+                      f"(zero smem cost, verified)")
+        console.print(f"    apply to byte offsets: {best['formula']}")
+        worst = max(best["per_pattern"], key=lambda pp: pp["before"])
+        console.print(f"    e.g. {worst['label']}: {worst['before']}-way → clean")
+        if len(sols) > 1:
+            alts = ", ".join(s2["cutlass"] for s2 in sols[1:])
+            console.print(f"    [dim]alternatives: {alts}[/]")
 
     def human():
         if not results:
@@ -351,23 +368,26 @@ def solve(path, threads, kernel_re, arch, as_json, output):
                           f"[dim]({r['unit']})[/]")
             console.print(f"  {r['conflicted_sites']} conflicted of "
                           f"{r['shared_accesses']} shared accesses")
-            if not r["solutions"]:
-                console.print("  [yellow]no single swizzle cleans every access "
-                              "— consider restructuring or padding[/]")
-                continue
-            best = r["solutions"][0]
-            console.print(f"  [green]solution:[/] [bold]{best['cutlass']}[/]  "
-                          f"(zero smem cost, verified on all accesses)")
-            console.print(f"    apply to byte offsets: {best['formula']}")
-            worst = max(best["per_pattern"], key=lambda pp: pp["before"])
-            console.print(f"    e.g. {worst['label']}: "
-                          f"{worst['before']}-way → clean")
-            if len(r["solutions"]) > 1:
-                alts = ", ".join(s2["cutlass"] for s2 in r["solutions"][1:])
-                console.print(f"    [dim]alternatives: {alts}[/]")
-            console.print("")
-            for line in best["cuda_snippet"].split("\n"):
-                console.print(f"    [dim]{line}[/]")
+            if r["global"]:
+                _print_group({"solutions": r["global"]},
+                             "solution (all accesses)")
+                console.print("")
+                for line in r["global"][0]["cuda_snippet"].split("\n"):
+                    console.print(f"    [dim]{line}[/]")
+            elif r["groups"]:
+                console.print("  [yellow]no single swizzle cleans every "
+                              "access; per-tile layouts (apply each to its "
+                              "own shared region):[/]")
+                for grp in r["groups"]:
+                    console.print(f"  [cyan]tile[/] {', '.join(grp['sites'])}")
+                    _print_group(grp, "swizzle")
+                if r["unsolved_sites"]:
+                    console.print(f"  [red]no swizzle found for:[/] "
+                                  f"{', '.join(r['unsolved_sites'])} "
+                                  "— consider padding or restructuring")
+            else:
+                console.print("  [yellow]no swizzle cleans these accesses — "
+                              "consider restructuring or padding[/]")
 
     _emit(doc, as_json, output, human)
     sys.exit(0)
@@ -520,9 +540,13 @@ def tune(src, arch, defines, flags, threads, smem_dynamic, as_json, output):
 @click.option("--arch", default=None, help="architecture for .ptx input")
 @click.option("--threads", type=str, default=None,
               help="block shape — adds bytes/iter + stall cycles per 512 B")
+@click.option("--allow-unverified-arch", is_flag=True,
+              help="decode control bits on architectures whose encoding "
+                   "cuxray has not validated against hardware (results marked "
+                   "unverified)")
 @click.option("--json", "as_json", is_flag=True)
 @click.option("--output", "-o", default=None, help="write JSON to a file")
-def sched(path, kernel_re, arch, threads, as_json, output):
+def sched(path, kernel_re, arch, threads, allow_unverified_arch, as_json, output):
     """Per-loop cycle estimates from the compiler's embedded schedule
     (sm_80-sm_90a; encodings for other architectures are unverified).
 
@@ -546,11 +570,17 @@ def sched(path, kernel_re, arch, threads, as_json, output):
         dis = sass.parse_gi(tc.run("nvdisasm", ["-c", "-gi", cubin]))
         from .parse import elf as _elf
         arch_eff = dis.target or _elf.sm_arch(unit.cubin.read_bytes())
-        if not ctrl.arch_supported(arch_eff):
-            err.print(f"[yellow]{unit.label}: control-bit encoding for "
-                      f"{arch_eff or 'unknown arch'} is unverified — skipping "
-                      "(supported: sm_80-sm_90a)[/]")
-            continue
+        verified = ctrl.arch_supported(arch_eff)
+        if not verified:
+            if not allow_unverified_arch:
+                err.print(f"[yellow]{unit.label}: control-bit encoding for "
+                          f"{arch_eff or 'unknown arch'} is unverified — "
+                          "skipping (supported: sm_80-sm_90a; pass "
+                          "--allow-unverified-arch to decode anyway)[/]")
+                continue
+            err.print(f"[yellow]{unit.label}: decoding {arch_eff} control bits "
+                      "with the sm_80-sm_90a model — UNVERIFIED, cycle "
+                      "estimates may be wrong[/]")
         controls = ctrl.parse_sass_controls(
             tc.run("cuobjdump", ["-sass", cubin]))
         try:
@@ -577,7 +607,8 @@ def sched(path, kernel_re, arch, threads, as_json, output):
             rows = loop_schedule(func, cfg.get(name), controls.get(name, {}), bpi)
             if rows:
                 results.append({"unit": unit.label, "kernel": name,
-                                "arch": arch_eff, "loops": rows})
+                                "arch": arch_eff, "loops": rows,
+                                "control_bits_verified": verified})
 
     doc = {"schema": "cuxray.sched/1", "results": results}
 
@@ -696,10 +727,15 @@ def doctor(fetch):
 
 
 @main.command()
-def schema():
-    """Print the JSON Schema for report documents (cuxray.schema/1)."""
+@click.option("--commands", is_flag=True,
+              help="print the schema for advise/sched/solve/why/tune --json "
+                   "instead of the report schema")
+def schema(commands):
+    """Print the JSON Schema for cuxray JSON output."""
     from importlib.resources import files
-    click.echo(files("cuxray.schema").joinpath("cuxray.schema.1.json").read_text())
+    fname = ("cuxray.commands.1.json" if commands
+             else "cuxray.schema.1.json")
+    click.echo(files("cuxray.schema").joinpath(fname).read_text())
 
 
 @main.command()

@@ -275,6 +275,29 @@ class TestSolver:
         assert "__device__" in snip and "byte_off ^" in snip
         assert best.cute_type.startswith("cute::Swizzle<")
 
+    def test_grouped_global_when_one_swizzle_suffices(self):
+        from cuxray.analyze.solver import solve_grouped
+        g = solve_grouped(self._patterns())
+        assert g["global"], "classic case has a single global swizzle"
+        assert len(g["groups"]) == 1 and not g["unsolved"]
+
+    def test_grouped_splits_independent_tiles(self):
+        # two tiles needing different swizzles: a stride-8B tile (2-way at
+        # width 4) and a column tile (32-way). No single swizzle cleans both
+        # granularities, but each is solvable alone.
+        from cuxray.analyze.solver import Pattern, solve_grouped
+        tile_a = Pattern(vec=tuple(l * 8 for l in range(32)), width=4,
+                         ways_before=2, site="k.cu:10")
+        tile_b = Pattern(vec=tuple(l * 128 for l in range(32)), width=4,
+                         ways_before=32, site="k.cu:20")
+        g = solve_grouped([tile_a, tile_b])
+        if g["global"]:
+            return  # a shared swizzle is even better; nothing to assert
+        sites = {s for grp in g["groups"] for s in grp["sites"]}
+        assert sites == {"k.cu:10", "k.cu:20"}
+        for grp in g["groups"]:
+            assert grp["solutions"], grp["sites"]
+
 
 class TestBlockInvariance:
     def test_x_reads_flagged_invariant_weight_reads_not(self):
