@@ -90,8 +90,10 @@ def _split_operands(text: str) -> list[str]:
 
 
 class State:
-    def __init__(self, regs: Optional[dict] = None):
+    def __init__(self, regs: Optional[dict] = None,
+                 consts: Optional[dict[int, int]] = None):
         self.regs: dict[str, lv.Value] = regs or {}
+        self.consts: dict[int, int] = consts or {}  # resolved c[0x0][slot]
 
     def get(self, name: str) -> lv.Value:
         if name in ("RZ", "URZ"):
@@ -103,7 +105,7 @@ class State:
             self.regs[name] = val
 
     def copy(self) -> "State":
-        return State(dict(self.regs))
+        return State(dict(self.regs), self.consts)
 
     def join_with(self, other: "State") -> bool:
         """Merge other into self; True if self changed."""
@@ -133,7 +135,17 @@ def _operand_value(op: str, st: State) -> lv.Value:
             v = lv.xor(v, lv.const(0xFFFFFFFF))
         return v
     if core.startswith("c[") or op.startswith("c["):
-        return lv.uniform_unknown()  # constant bank = kernel param / uniform
+        # bank 0 low slots are the launch config; blockDim is caller-known
+        m = re.match(r"^c\[0x0\]\[(0x[0-9a-fA-F]+)\]$",
+                     (core if core.startswith("c[") else op).replace(" ", ""))
+        if m and int(m.group(1), 16) in st.consts:
+            v = lv.const(st.consts[int(m.group(1), 16)])
+            if neg:
+                v = lv.sub(lv.const(0), v)
+            if inv:
+                v = lv.xor(v, lv.const(0xFFFFFFFF))
+            return v
+        return lv.uniform_unknown()  # kernel param / other uniform
     return lv.varying()
 
 
@@ -268,13 +280,18 @@ def step(instr: Instruction, st: State, tids: dict[str, lv.Value]) -> None:
         return
 
     if base in ("SHF", "USHF"):
-        # Funnel shift; the common address pattern is SHF.L/R with RZ filler →
-        # a plain shift of ops[1] by ops[2]
+        # Funnel shift of {ops[3]:ops[1]} by ops[2]. With an RZ filler it is a
+        # plain shift: .L/.R take the source from the low word (ops[1]);
+        # .L.HI/.R.HI take it from the high word (ops[3]).
         if len(ops) >= 4:
-            a = _operand_value(ops[1], st)
             sh = _operand_value(ops[2], st)
-            filler = ops[3].split(".")[0]
-            if filler in ("RZ", "URZ"):
+            lo, hi = ops[1].split(".")[0], ops[3].split(".")[0]
+            if ".HI" in op and lo in ("RZ", "URZ"):
+                a = _operand_value(ops[3], st)
+                assign(lv.shl(a, sh) if ".L" in op else lv.shr(a, sh))
+                return
+            if ".HI" not in op and hi in ("RZ", "URZ"):
+                a = _operand_value(ops[1], st)
                 assign(lv.shl(a, sh) if ".L" in op else lv.shr(a, sh))
                 return
         assign(lv.varying())
@@ -372,7 +389,8 @@ def analyze_ex(func: Function, block_dims: tuple[int, int, int],
     block_of_label[cur_label] = len(blocks) - 1
 
     entry: list[Optional[State]] = [None] * len(blocks)
-    entry[0] = State()
+    bx, by, bz = block_dims
+    entry[0] = State(consts={0x0: bx, 0x4: by, 0x8: bz})  # ntid.{x,y,z}
     pre: dict[int, State] = {}
 
     converged = False

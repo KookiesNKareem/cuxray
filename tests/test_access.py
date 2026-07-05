@@ -6,7 +6,8 @@ from pathlib import Path
 import pytest
 
 from cuxray.analyze import lanevalue as lv
-from cuxray.analyze.access import analyze_accesses, bank_conflict_ways, sector_count
+from cuxray.analyze.access import (analyze_accesses, bank_conflict_ways,
+                                   ideal_sectors, sector_count)
 from cuxray.parse import sass
 
 REC = Path(__file__).parent / "fixtures" / "recorded"
@@ -46,6 +47,67 @@ class TestDomain:
         assert j.kind == lv.MIXED  # same lane pattern, uniform offset
         c = lv.pure([x * 8 for x in range(32)])
         assert lv.join(a, c).kind == lv.VARYING
+
+
+class TestAlignmentTracking:
+    """MIXED values whose unknown-uniform part U satisfies U % 2**a == 0
+    stay traceable through the shr/and/xor chains XOR swizzles compile to."""
+
+    def _loop_index(self):
+        # c = lane; loop back-edge c += 32 — the classic strided induction
+        c0 = lv.pure(range(32))
+        return lv.join(c0, lv.add(c0, lv.const(32)))
+
+    def test_join_records_alignment(self):
+        c = self._loop_index()
+        assert c.kind == lv.MIXED and c.ualign == 5
+
+    def test_linear_ops_scale_alignment(self):
+        c = self._loop_index()
+        assert lv.mul(c, lv.const(32)).ualign == 10
+        assert lv.shl(c, lv.const(4)).ualign == 9
+        assert lv.add(c, c).ualign == 5
+
+    def test_shr_splits_below_alignment(self):
+        va = lv.shr(lv.mul(self._loop_index(), lv.const(32)), lv.const(4))
+        assert va.kind == lv.MIXED and va.ualign == 6
+        assert va.vec == tuple(2 * l for l in range(32))
+
+    def test_shr_past_alignment_degrades(self):
+        c = self._loop_index()
+        assert lv.shr(c, lv.const(6)).kind == lv.VARYING
+
+    def test_and_mask_below_alignment_is_pure(self):
+        bit = lv.and_(lv.shr(self._loop_index(), lv.const(3)), lv.const(1))
+        assert bit.kind == lv.PURE
+        assert bit.vec == tuple((l >> 3) & 1 for l in range(32))
+
+    def test_xor_swizzle_stays_traceable(self):
+        # gemv_v7's Swizzle<1,4,3> in int4-index form: v ^ ((v >> 3) & 1)
+        va = lv.shr(lv.mul(self._loop_index(), lv.const(32)), lv.const(4))
+        sw = lv.xor(va, lv.and_(lv.shr(va, lv.const(3)), lv.const(1)))
+        assert sw.kind == lv.MIXED
+        assert sw.vec == tuple(v ^ ((v >> 3) & 1) for v in (2 * l for l in range(32)))
+
+    def test_lop3_through_aligned_mixed(self):
+        va = lv.shr(lv.mul(self._loop_index(), lv.const(32)), lv.const(4))
+        bit = lv.pure([((2 * l) >> 3) & 1 for l in range(32)])
+        out = lv.lop3(va, bit, lv.const(0), 0x3C)  # a XOR b
+        assert out.kind == lv.MIXED
+        assert out.vec == tuple(v ^ ((v >> 3) & 1) for v in (2 * l for l in range(32)))
+
+    def test_lop3_fused_or_and_as_emitted(self):
+        # gemv_v7's swizzle as ptxas emits it: LOP3 0xf8 = a | (b & c) with
+        # a = va (MIXED, align 6) and c = va >> 3 (MIXED, align 3)
+        va = lv.shr(lv.mul(self._loop_index(), lv.const(32)), lv.const(4))
+        out = lv.lop3(va, lv.const(1), lv.shr(va, lv.const(3)), 0xF8)
+        assert out.kind == lv.MIXED
+        assert out.vec == tuple(v | (1 & (v >> 3)) for v in (2 * l for l in range(32)))
+
+    def test_zero_alignment_unchanged(self):
+        m = lv.add(lv.uniform_unknown(), lv.pure(range(32)))
+        assert lv.shr(m, lv.const(2)).kind == lv.VARYING
+        assert lv.xor(m, lv.const(8)).kind == lv.VARYING
 
 
 class TestBankMath:
@@ -92,6 +154,18 @@ class TestSectorMath:
     def test_fully_strided(self):
         worst, best = sector_count(tuple(l * 128 for l in range(32)), 4)
         assert worst == best == 32
+
+    def test_partial_broadcast_efficiency_capped(self):
+        # 8 lanes per word (e.g. xscale[k/128]): footprint is 32 B → 1 ideal
+        # sector; efficiency must never exceed 100%
+        vec = tuple((l // 4) * 4 for l in range(32))
+        ideal = ideal_sectors(vec, 4)
+        worst, _ = sector_count(vec, 4)
+        assert ideal == 1 and worst >= ideal
+
+    def test_distinct_lanes_ideal_unchanged(self):
+        assert ideal_sectors(tuple(l * 4 for l in range(32)), 4) == 4
+        assert ideal_sectors(tuple(l * 16 for l in range(32)), 16) == 16
 
 
 EXPECT = {

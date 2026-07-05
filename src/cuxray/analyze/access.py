@@ -63,6 +63,13 @@ def bank_conflict_ways(vec: tuple[int, ...], width: int) -> tuple[int, bool]:
     return worst, broadcast
 
 
+def ideal_sectors(vec: tuple[int, ...], width: int) -> int:
+    """Sectors needed for the warp's unique byte footprint, perfectly packed.
+    Lanes sharing addresses shrink it below 32*width."""
+    unique = {(a + k) & 0xFFFFFFFF for a in vec for k in range(width)}
+    return max(1, math.ceil(len(unique) / 32))
+
+
 def sector_count(vec: tuple[int, ...], width: int) -> tuple[int, int]:
     """(worst, best) 32-byte sectors touched across unknown base alignments."""
     counts = []
@@ -171,7 +178,7 @@ def analyze_accesses(func: Function, block_dims: tuple[int, int, int],
         entry["block_invariant"] = block_invariant
         entry["stride"] = _stride(vec)
         worst, best = sector_count(vec, entry["width"])
-        ideal = math.ceil(32 * entry["width"] / 32)
+        ideal = ideal_sectors(vec, entry["width"])
         entry["sectors_worst"] = worst
         entry["sectors_best"] = best
         entry["sectors_ideal"] = ideal
