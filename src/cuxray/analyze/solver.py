@@ -1,22 +1,16 @@
-"""Shared-memory layout solver: search XOR swizzles that make EVERY shared
-access in a kernel bank-conflict-free simultaneously (Layer B "simulate,
-then suggest" taken to its conclusion).
+"""Shared-memory layout solver.
 
-The hard real-world case is a tile written one way (e.g. coalesced rows)
-and read another (columns, or ldmatrix fragments): padding often cannot
-satisfy both patterns, but the right XOR swizzle can — that's why CUTLASS
-layouts exist. The search space is tiny and every candidate is *verified*
-against the same transaction-group bank model that hardware timing
-validated, so a returned solution is a proof, not a heuristic.
+Searches XOR swizzles under which every shared access in a kernel is
+bank-conflict-free simultaneously. Candidates are verified against the
+bank model in `access.bank_conflict_ways`; only verified layouts are
+returned.
 
-Swizzle convention (matches CUTLASS/cute `Swizzle<B,M,S>` applied to byte
-offsets): B bits located at bit position M+S are XORed down onto bits at
-position M:
+Swizzle convention (CUTLASS/cute `Swizzle<B,M,S>` applied to byte offsets):
+B bits at position M+S are XORed onto bits at position M:
 
     addr' = addr ^ ((addr >> S) & (((1 << B) - 1) << M))
 
-e.g. <3,4,3>: addr ^ ((addr >> 3) & 0x70) — the classic 128-byte-row fp16
-tile swizzle (16-byte granules).
+e.g. <3,4,3>: addr ^ ((addr >> 3) & 0x70).
 """
 
 from __future__ import annotations

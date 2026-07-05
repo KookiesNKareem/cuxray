@@ -256,8 +256,8 @@ def analyze_unit(
 
 
 def _cache_key(unit: CubinUnit, tc: Toolchain, kw: dict) -> str:
-    """Content-addressed: cubin bytes + analyzer version + toolchain versions
-    + every analysis parameter. Any change to inputs misses the cache."""
+    """Cache key: cubin bytes + analyzer version + toolchain versions +
+    analysis parameters."""
     h = hashlib.sha256()
     h.update(unit.cubin.read_bytes())
     h.update(__version__.encode())

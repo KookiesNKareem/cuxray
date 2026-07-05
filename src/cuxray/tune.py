@@ -1,11 +1,9 @@
-"""Compile-in-the-loop register-cap tuning: map the maxrregcount frontier.
+"""Register-cap tuning via recompilation.
 
-Pure simulation cannot answer "what happens to spills if I cap registers at
-N" — that requires ptxas to actually re-allocate. But ptxas runs in
-milliseconds with no GPU, so we recompile the kernel at a ladder of caps and
-analyze each resulting cubin with the standard cuxray pipeline: actual
-registers, spill locations/bytes, and occupancy. The result is the whole
-occupancy-vs-spill trade-off as data instead of folklore.
+Recompiles a PTX kernel with ptxas at a ladder of --maxrregcount values and
+analyzes each resulting cubin (registers, spills, occupancy). No GPU is
+involved; spill behavior under a cap requires re-allocation and cannot be
+derived from a single binary.
 """
 
 from __future__ import annotations

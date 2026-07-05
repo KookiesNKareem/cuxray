@@ -1,34 +1,18 @@
-"""Lane-value abstract domain for static access-pattern analysis (Layer B).
+"""Lane-value abstract domain for static access-pattern analysis.
 
-The key observation that makes this tractable and *exact where it matters*:
-shared-memory bank conflicts and global coalescing depend only on the
-DIFFERENCES between the 32 lanes' addresses within a warp. Warp-uniform terms
-(base pointers, loop counters, block indices, kernel params) shift every lane
-equally and cancel out of every difference — bank-conflict multiplicity is
-invariant under uniform shifts (a uniform base rotates the bank pattern, it
-never changes collision counts), and 128-byte-line counts change by at most
-the boundary straddle we report explicitly.
+Bank conflicts and coalescing depend only on differences between the 32
+lanes' addresses within a warp; warp-uniform terms cancel. Values:
 
-So a register's abstract value is one of:
+  PURE(vec)    exact per-lane values, no uniform part. Closed under all
+               integer ops elementwise (constants are PURE with equal lanes).
+  MIXED(vec)   exact per-lane offsets plus an unknown warp-uniform part.
+               Closed under linear ops (+, -, *const, <<const); nonlinear
+               ops on a nonzero vec degrade to VARYING.
+  VARYING      lane-dependence unknown; carries an attribution reason.
 
-  PURE(vec)    exact per-lane values for the representative warp, with NO
-               unknown uniform part (constants are PURE with equal entries).
-               Closed under *all* integer ops elementwise — including the
-               shifts/AND/XOR used by swizzled layouts, which is what lets
-               cuxray prove CUTLASS-style swizzles conflict-free instead of
-               giving up.
-  MIXED(vec)   exact per-lane offsets PLUS an unknown warp-uniform part.
-               Closed under +, -, *const, <<const (linear ops); anything
-               nonlinear on the uniform part (>>, &, ^, *lane) degrades to
-               VARYING. MIXED(zero-vec) is "uniform, unknown".
-  VARYING      lane-dependence unknown (data-dependent loads, predicated
-               writes, unsupported ops). Analyses must say "can't analyze",
-               never guess.
-
-The representative warp is warp 0 of a block shape supplied by the user
-(--threads "256" or "32,8"). Warps other than 0 differ only by uniform tid
-offsets when blockDim.x % 32 == 0 (the overwhelmingly common case); callers
-should note when that doesn't hold.
+The lane vectors model warp 0 of a caller-supplied block shape. Other warps
+differ only by uniform tid offsets when blockDim.x % 32 == 0; callers emit a
+note otherwise.
 """
 
 from __future__ import annotations

@@ -162,18 +162,15 @@ _SMEM_PREFIXES = ("LDS", "STS", "LDGSTS", "UTMA")  # LDS covers LDSM, STS covers
 
 
 def uses_shared_memory(func: Function) -> bool:
-    """True if the kernel touches shared memory at all (loads/stores/matrix
-    loads/async copies/TMA into smem). Used to flag kernels that allocate
-    shared memory *dynamically*: they access smem while the binary records no
-    static allocation — the size is a host-side launch parameter no static
-    tool can recover."""
+    """True if the kernel touches shared memory (loads/stores/matrix loads/
+    async copies/TMA). Used to flag dynamic shared-memory kernels: smem
+    accesses with no static allocation recorded in the binary."""
     return any(i.opcode.startswith(_SMEM_PREFIXES) for i in func.instructions)
 
 
 def uses_register_reallocation(func: Function) -> bool:
     """True if the kernel redistributes registers between warpgroups at
-    runtime (PTX setmaxnreg → SASS USETMAXREG on sm_90+). For such kernels
-    the recorded per-thread REG count is the post-reallocation *maximum*,
-    not the launch allocation — naive occupancy math from it is pessimistic
-    (often "0 blocks" for kernels that ship in production, e.g. FA3)."""
+    runtime (PTX setmaxnreg -> SASS USETMAXREG, sm_90+). The recorded
+    per-thread REG count is then the post-reallocation maximum, not the
+    launch allocation; occupancy computed from it is pessimistic."""
     return any("SETMAXREG" in i.opcode for i in func.instructions)

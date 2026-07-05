@@ -1,9 +1,8 @@
-"""Forward dataflow over SASS assigning lane-values to registers (Layer B).
+"""Forward dataflow over SASS assigning lane-values to registers.
 
-Walks a kernel's instructions block by block to a fixpoint, interpreting the
-address-forming subset of SASS with the lanevalue domain. Everything not
-understood makes its destination VARYING — the analysis degrades to "can't
-analyze", never to a wrong answer.
+Iterates basic blocks to a fixpoint, interpreting the address-forming subset
+of SASS with the lanevalue domain. Unrecognized instructions make their
+destinations VARYING.
 
 Seeds:
   S2R  Rd, SR_TID.X/Y/Z      → exact per-lane vectors (needs block shape)

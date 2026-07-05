@@ -6,13 +6,12 @@ limits: registers are allocated per warp in units of `reg_alloc_granularity`
 the hardware launch check that rounds warp allocation up to the subpartition
 count. Partitioned global caching is omitted (not supported on CC >= 7).
 
-Shared memory follows the physical model rather than the header's per-block
-limit check verbatim: allocated = round_up(static + dynamic + reserved,
-granularity); blocks = carveout // allocated. Kernels using more than 48 KB
-get an informational "requires opt-in" note. (The header's comparison of
-reserved-inclusive allocation against the reserved-exclusive opt-in limit
-would reject the documented per-block maximum; validate against ncu_occupancy
-on real hardware before changing this.)
+Shared memory uses the physical model rather than the header's per-block
+limit check: allocated = round_up(static + dynamic + reserved, granularity);
+blocks = carveout // allocated. Usage above 48 KB gets a "requires opt-in"
+note. Note before changing: the header's comparison of reserved-inclusive
+allocation against the reserved-exclusive opt-in limit rejects the
+documented per-block maximum.
 """
 
 from __future__ import annotations

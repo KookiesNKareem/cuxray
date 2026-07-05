@@ -8,8 +8,7 @@ Gives cuxray three cheap facts without invoking nvdisasm:
                  arch from nvdisasm's `.target` line.
   - functions(): (symbol_index, name) for STT_FUNC symbols, in symtab order.
                  Symbol indices feed `nvdisasm -fun i,j,...` to restrict
-                 disassembly to matching kernels (38s → 1.4s on an 8 MB
-                 production Marlin cubin).
+                 disassembly to matching kernels.
 """
 
 from __future__ import annotations

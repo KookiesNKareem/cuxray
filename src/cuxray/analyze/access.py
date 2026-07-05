@@ -1,25 +1,18 @@
-"""Static shared-memory bank-conflict and global-coalescing analysis (Layer B).
+"""Static shared-memory bank-conflict and global-coalescing analysis.
 
-Model notes (kept deliberately explicit — every number here is defensible):
+Shared memory model: 32 banks x 4 bytes, bank = (addr >> 2) & 31. Same-word
+lanes broadcast; same-bank different-word lanes serialize. Wide accesses are
+serviced in transaction groups of consecutive lanes (warp / half-warp /
+quarter-warp for 4/8/16 B). Conflict counts are invariant under the unknown
+uniform base (natural alignment assumed).
 
-Shared memory: 32 banks × 4 bytes, bank = (addr >> 2) & 31. Lanes accessing
-the same 4-byte word broadcast (no conflict); lanes hitting the same bank at
-*different* words serialize. Wide accesses (.64/.128) are processed in 2/4
-phases — one 4-byte word column per phase — so we report the max ways across
-phases. Natural alignment (required by hardware) plus the uniform-shift
-invariance of conflict counts means the unknown uniform base never affects
-the answer: a uniform base only *rotates* the bank pattern.
+Global model: 32-byte sectors. The uniform base can change sector counts by
+boundary straddle; all base offsets mod 32 are evaluated and worst/best
+reported.
 
-Global memory: counted in 32-byte sectors (what NCU reports). The unknown
-uniform base CAN change sector counts by boundary straddle, so we evaluate
-all base offsets mod 32 and report the worst case, flagging when it differs
-from the best.
-
-LDSM/STSM matrix accesses use the 8-lane phase-group model (16 B rows);
-LDGSTS async copies are analyzed on both faces (global coalescing + shared
-banks). Still unmodeled, listed with reasons and never guessed: TMA bulk
-copies (hardware-managed), generic LD/ST (address space unknown), LDL/STL
-(local — covered by the spill map).
+LDSM/STSM use the 8-lane phase-group model (16 B rows). LDGSTS is analyzed
+as both a global read and a shared write. Unmodeled (reported, not guessed):
+TMA bulk copies, generic LD/ST, LDL/STL (covered by the spill map).
 """
 
 from __future__ import annotations
@@ -83,9 +76,8 @@ def sector_count(vec: tuple[int, ...], width: int) -> tuple[int, int]:
 
 
 def _verified_fixes(vec: tuple[int, ...], width: int) -> list[dict]:
-    """Candidate conflict fixes, SIMULATED before being suggested — only
-    fixes that verify clean under the same bank model are returned.
-    Zero-shared-memory-cost fixes (swizzles) rank first."""
+    """Conflict fixes verified clean under the bank model before being
+    suggested. Zero-smem-cost fixes (swizzles) rank first."""
     fixes: list[dict] = []
     # XOR swizzle of the word index: free (no smem growth)
     for mask in (7, 15, 31):
