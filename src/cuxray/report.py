@@ -94,7 +94,11 @@ def analyze_unit(
     block_dims: Optional[tuple[int, int, int]] = None,
     peak_tflops: Optional[float] = None,
     peak_gbs: Optional[float] = None,
+    grid_dims: Optional[tuple[int, int, int]] = None,
 ) -> dict:
+    grid_blocks = None
+    if grid_dims:
+        grid_blocks = grid_dims[0] * grid_dims[1] * grid_dims[2]
     cubin = str(unit.cubin)
     data = unit.cubin.read_bytes()
     res = resusage.parse(tc.run("cuobjdump", ["--dump-resource-usage", cubin]))
@@ -224,13 +228,31 @@ def analyze_unit(
                     k_threads = k_dims[0] * k_dims[1] * k_dims[2]
             if k_dims:
                 depths = cfg.get(name).loop_depth if name in cfg else {}
-                acc = analyze_accesses(func, k_dims, depths)
+                acc = analyze_accesses(func, k_dims, depths,
+                                       grid_dims=grid_dims)
                 fcfg = cfg.get(name)
                 loops = loop_report(func, fcfg, acc["accesses"])
                 for row in loops:
                     row["bound"] = classify(row["est_arithmetic_intensity"],
                                             peak_tflops, peak_gbs)
                 k["roofline"] = loops[:6]
+                if grid_blocks:
+                    # every block re-reads block-invariant data: worst case
+                    # (L2-cold) that traffic scales with the grid. Summed
+                    # over all loops — staging loops often hold the
+                    # invariant reads, not the hot loop.
+                    g = sum(row["est_global_bytes_per_warp_iter"] or 0
+                            for row in loops)
+                    inv = sum(row.get("est_block_invariant_bytes_per_warp_iter", 0)
+                              for row in loops)
+                    if g:
+                        k["grid_traffic"] = {
+                            "grid_blocks": grid_blocks,
+                            "invariant_bytes_per_warp_iter": inv,
+                            "invariant_fraction": round(inv / g, 3),
+                            "worst_amplification":
+                                round((g + (grid_blocks - 1) * inv) / g, 2),
+                        }
                 k["access"] = {
                     key: acc[key] for key in (
                         "block_dims", "analyzed_count", "unanalyzed_count",
@@ -331,6 +353,7 @@ def build_report(
     use_cache: bool = True,
     peak_tflops: Optional[float] = None,
     peak_gbs: Optional[float] = None,
+    grid_dims: Optional[tuple[int, int, int]] = None,
 ) -> dict:
     import tempfile
 
@@ -362,6 +385,7 @@ def build_report(
                 kernel_re=kernel_re, level=level, fast=fast,
                 smem_dynamic=smem_dynamic, block_dims=block_dims,
                 peak_tflops=peak_tflops, peak_gbs=peak_gbs,
+                grid_dims=grid_dims,
             ),
         }
     finally:

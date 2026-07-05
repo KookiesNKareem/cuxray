@@ -141,11 +141,12 @@ _SKIP_REASON = {
 
 def analyze_accesses(func: Function, block_dims: tuple[int, int, int],
                      loop_depth: Optional[dict[str, int]] = None,
-                     keep_vecs: bool = False) -> dict:
+                     keep_vecs: bool = False,
+                     grid_dims: Optional[tuple[int, int, int]] = None) -> dict:
     """keep_vecs=True attaches the raw per-lane vector to each access under
     '_vec' (for the layout solver); excluded from report JSON."""
     loop_depth = loop_depth or {}
-    pre, flow = analyze_ex(func, block_dims)
+    pre, flow = analyze_ex(func, block_dims, grid_dims=grid_dims)
     accesses, unanalyzed = [], []
 
     def make_entry(i, space, width=None):
