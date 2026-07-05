@@ -185,7 +185,11 @@ def step(instr: Instruction, st: State, tids: dict[str, lv.Value]) -> None:
     def assign(val: lv.Value) -> None:
         if d is None:
             return
-        if instr.predicate:  # predicated write: merge with previous value
+        # Predicated write: merge with the previous value — except on the
+        # first write, where the "previous value" is uninitialized garbage
+        # the compiler never lets live paths read (predicated pairs always
+        # cover the complement); joining against it would poison both halves.
+        if instr.predicate and d in st.regs:
             val = lv.join(st.get(d), val)
             if val.kind == lv.VARYING and not val.reason:
                 val = lv.varying("predicated write")
@@ -270,6 +274,19 @@ def step(instr: Instruction, st: State, tids: dict[str, lv.Value]) -> None:
             sh = (lv.const(int(srcs[2], 0))
                   if len(srcs) > 2 and _IMM.match(srcs[2]) else lv.const(0))
             assign(lv.add(lv.shl(a, sh), b))
+            return
+        if ".HI" in op and not has_carry_in and len(srcs) >= 3 \
+                and _IMM.match(srcs[-1]) and int(srcs[-1], 0) & 31:
+            # LEA.HI Rd, Ra, Rb, Rc, N → Rb + hi32({Rc:Ra} << N)
+            #   = Rb + ((Ra >> (32-N)) | (Rc << N)); the two parts occupy
+            # disjoint bits, so | == +. Covers the signed-div idiom
+            # x + (x >> 31) that fastdiv/index math compiles to.
+            n = int(srcs[-1], 0) & 31
+            a = _operand_value(srcs[0], st)
+            b = _operand_value(srcs[1], st)
+            c = _operand_value(srcs[2], st)
+            hi = lv.add(lv.shr(a, lv.const(32 - n)), lv.shl(c, lv.const(n)))
+            assign(lv.add(b, hi))
             return
         if ".HI" in op:
             vals = [_operand_value(o, st) for o in srcs if not _IMM.match(o)]
