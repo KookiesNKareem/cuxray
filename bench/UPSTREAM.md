@@ -222,3 +222,34 @@ gave the numbers to reject each — but the PR-worthy opportunity is a
 capability gap, not a marginal win in tuned code. That gap is vLLM W4A8
 on Ampere (branches banked, Track 3). The `advise` verdicts here are the
 tool doing exactly its job: telling you where NOT to spend effort.
+
+
+## DEFINITIVE head-to-head (2026-07-05, A100-80GB driver 580, vLLM 0.24 + #38066)
+
+The measurement that survives full rigor: both W4A8-INT paths driven
+END-TO-END through vLLM, identical weights, both using vLLM's own
+ops.scaled_int8_quant, CUDA-graph timed as one unit. Ours = the exact
+Dp4aW4A8LinearKernel.apply_weights forward. Marlin = vLLM's real
+CompressedTensorsW4A8Int scheme (create_weights -> process -> apply).
+
+| N x K | ours | Marlin (#38066 path) | speedup | out agreement |
+|---|---|---|---|---|
+| 4096x4096   | 11.5 us | 21.8 | 1.89x | 0.9% |
+| 11008x4096  | 19.1 us | 28.6 | 1.50x | 1.4% |
+| 4096x11008  | 23.3 us | 32.1 | 1.37x | 1.0% |
+| 4096x14336  | 31.1 us | 38.1 | 1.23x | 1.0% |
+
+Output agreement = ours vs Marlin on identical weights: ~1%, i.e. our
+kernel produces the answer vLLM already trusts, 1.2-1.9x faster. A5000
+(consumer Ampere) earlier showed 7-11% via the same method; the win is
+LARGER on the datacenter A100. Standalone .cu numbers (15.7us at 4096^2)
+UNDERSTATED this because they used a slower 2-phase quant; the shipped
+kernel uses vLLM's scaled_int8_quant and hits 11.5us.
+
+This resolves the whole vLLM track: the dp4a kernel is a materially
+better implementation of the exact path the open (stalled, unreviewed)
+PR #38066 enables — not a duplicate. Positioning: land as a follow-on /
+alternative backend once #38066 establishes act_type=int8 selection, or
+engage #38066 with these numbers.
+Earlier 'inf' correctness readings were a broken hand-rolled harness;
+driven through vLLM's real scheme, correctness is clean (~1%).
