@@ -274,6 +274,53 @@ def _kernel_summary(k: dict) -> dict:
 
 
 @main.command()
+@click.option("--bytes", "dram_bytes", type=float, required=True,
+              help="total DRAM traffic for the launch (bytes) — from problem dims")
+@click.option("--macs", type=float, default=0, help="multiply-accumulates (compute-bound)")
+@click.option("--precision", default="int8", help="int8/fp16/fp32 for the MAC peak")
+@click.option("--datapath", default="simt-int", help="simt-int/simt-fp/tensor")
+@click.option("--sms", type=int, required=True, help="device SM count")
+@click.option("--clock", type=float, required=True, help="sustained clock GHz")
+@click.option("--peak-gbs", type=float, required=True, help="measured achievable DRAM GB/s")
+@click.option("--e-sat", type=float, default=0.95, help="saturating efficiency (calibrate)")
+@click.option("--t-fixed", type=float, default=0.0, help="fixed per-launch µs (calibrate)")
+@click.option("--calibrate", type=click.Path(exists=True), default=None,
+              help="JSON [[ideal_us, measured_us], ...] to fit (e_sat, t_fixed)")
+@click.option("--json", "as_json", is_flag=True)
+@click.option("--output", "-o", default=None)
+def perf(dram_bytes, macs, precision, datapath, sms, clock, peak_gbs,
+         e_sat, t_fixed, calibrate, as_json, output):
+    """Calibrated-roofline wall-clock estimate. Supply the launch's total
+    work (--bytes, --macs) and device constants; (e_sat, t_fixed) come from
+    --calibrate (a few measurements) or defaults. Predicts µs without a GPU."""
+    from .analyze.perfmodel import Calibration, Device, Work, fit, predict
+
+    calib = Calibration(e_sat=e_sat, t_fixed_us=t_fixed)
+    if calibrate:
+        samples = [(float(a), float(b)) for a, b in
+                   json.loads(Path(calibrate).read_text())]
+        calib = fit(samples)
+    dev = Device(sms=sms, clock_ghz=clock, achievable_gbs=peak_gbs)
+    work = Work(dram_bytes=dram_bytes, macs=int(macs), precision=precision,
+                datapath=datapath)
+    r = predict(work, dev, calib)
+    r["calibration"] = {"e_sat": calib.e_sat, "t_fixed_us": calib.t_fixed_us}
+    out = {"schema": "cuxray.perf/1", **r}
+
+    def human():
+        console.print(f"[bold]{r['us']} µs[/]  [dim]({r['bound']}-bound)[/]")
+        console.print(f"  roofline floor: {r['t_ideal_us']} µs "
+                      f"(mem {r['t_mem_ideal_us']}, compute {r['t_compute_ideal_us']})")
+        console.print(f"  calibration: e_sat={calib.e_sat}, "
+                      f"t_fixed={calib.t_fixed_us} µs")
+        console.print("[dim]estimate — rank candidates with this, verify the "
+                      "top few on hardware[/]")
+
+    _emit(out, as_json, output, human)
+    sys.exit(0)
+
+
+@main.command()
 @click.argument("old", type=click.Path(exists=True))
 @click.argument("new", type=click.Path(exists=True))
 @click.option("--threads", type=str, default=None, help="block shape for both")
