@@ -343,3 +343,26 @@ class TestDataflowStep:
         b = State({})
         a.join_with(b)
         assert a.get("R4").kind == lv.PURE
+
+    def test_prmt_exact_byte_permute(self):
+        from cuxray.analyze.dataflow import State, step
+        st = State()
+        st.set("R2", lv.pure(range(32)))          # bytes: [l,0,0,0]
+        st.set("R3", lv.pure([0x11223344] * 32))
+        step(sass.Instruction(0, "PRMT", "R4, R2, 0x5410, R3"), st, self._tids())
+        # 0x5410: bytes 0,1 from R2, bytes 4,5 (R3 low half) above
+        assert st.get("R4").vec == tuple(l | (0x3344 << 16) for l in range(32))
+
+    def test_grid_dims_resolve_singleton_ctaid(self):
+        from cuxray.analyze.dataflow import analyze_ex
+        fn = sass.Function("k", [
+            sass.Instruction(0, "S2R", "R0, SR_CTAID.Y", block="k"),
+            sass.Instruction(16, "S2R", "R1, SR_CTAID.X", block="k"),
+        ])
+        pre, _ = analyze_ex(fn, (32, 1, 1), grid_dims=(128, 1, 1))
+        st = pre[16].copy()
+        from cuxray.analyze.dataflow import step
+        step(fn.instructions[1], st, lv.tid_vectors((32, 1, 1)))
+        assert pre[16].get("R0").is_scalar          # gridDim.y == 1 → const 0
+        assert not pre[16].get("R0").ctaid
+        assert st.get("R1").ctaid                   # gridDim.x > 1 → tainted

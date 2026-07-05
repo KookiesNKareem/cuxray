@@ -107,17 +107,33 @@ def ls(path, kernel_re, as_json, output, no_cache):
               help="device peak TFLOP/s for roofline bound classification (estimate)")
 @click.option("--peak-gbs", type=float, default=None,
               help="device peak memory bandwidth GB/s for roofline classification")
+@click.option("--grid", "grid_str", default=None,
+              help="launch grid 'X[,Y[,Z]]' — adds worst-case (L2-cold) traffic "
+                   "amplification of block-invariant reads across the grid")
 @click.option("--json", "as_json", is_flag=True, help="emit JSON")
 @click.option("--no-cache", is_flag=True, help="bypass the on-disk analysis cache")
 @click.option("--output", "-o", default=None, help="write JSON to a file")
 def report(path, threads, carveout, kernel_re, arch, fast, smem_dynamic,
-           verbose, peak_tflops, peak_gbs, as_json, output, no_cache):
+           verbose, peak_tflops, peak_gbs, grid_str, as_json, output, no_cache):
     """Full static report: resources, pressure, spills, occupancy, access
     patterns, per-loop roofline estimates."""
+    grid_dims = None
+    if grid_str:
+        try:
+            parts = [int(x) for x in grid_str.split(",")]
+            if not (1 <= len(parts) <= 3 and all(x >= 1 for x in parts)):
+                raise ValueError(grid_str)
+        except ValueError:
+            err.print(f"[red]invalid --grid:[/] {grid_str!r} (want X[,Y[,Z]])")
+            sys.exit(2)
+        while len(parts) < 3:
+            parts.append(1)
+        grid_dims = tuple(parts)
     doc = _report_or_die(path, threads=threads, carveout_kb=carveout,
                          kernel_re=kernel_re, arch=arch, fast=fast,
                          smem_dynamic=smem_dynamic, use_cache=not no_cache,
-                         peak_tflops=peak_tflops, peak_gbs=peak_gbs)
+                         peak_tflops=peak_tflops, peak_gbs=peak_gbs,
+                         grid_dims=grid_dims)
 
     def human():
         render_report(doc, console)
@@ -283,6 +299,80 @@ def solve(path, threads, kernel_re, arch, as_json, output):
 
 
 @main.command()
+@click.argument("path", type=click.Path(exists=True))
+@click.option("--threads", type=str, required=True,
+              help="block shape: '256' or '32,8[,1]'")
+@click.option("--kernel", "kernel_re", default=None, help="regex filter on kernel names")
+@click.option("--addr", "addr_hex", default=None,
+              help="explain one instruction (hex address); default: every unanalyzed access")
+@click.option("--arch", default=None, help="architecture for .ptx input")
+@click.option("--json", "as_json", is_flag=True)
+@click.option("--output", "-o", default=None, help="write JSON to a file")
+def why(path, threads, kernel_re, addr_hex, arch, as_json, output):
+    """Explain why an access is (or is not) analyzable.
+
+    Backward-slices the address computation, printing each defining
+    instruction with its abstract lane-value and marking the first
+    instruction where precision is lost."""
+    from .analyze.whytrace import why_kernel
+    from .parse import cfgdot, sass
+    from .report import parse_block_dims
+    from .ingest import ingest
+
+    tc = _toolchain(str(path).endswith(".ptx"))
+    try:
+        dims, _total = parse_block_dims(threads)
+        units = ingest(Path(path), tc, arch=arch)
+    except Exception as e:
+        err.print(f"[red]error:[/] {e}")
+        sys.exit(2)
+
+    target = int(addr_hex, 16) if addr_hex else None
+    pat = re.compile(kernel_re) if kernel_re else None
+    results = []
+    for unit in units:
+        cubin = str(unit.cubin)
+        dis = sass.parse_gi(tc.run("nvdisasm", ["-c", "-gi", cubin]))
+        try:
+            cfg = cfgdot.parse(tc.run("nvdisasm", ["-cfg", cubin]))
+        except Exception:
+            cfg = {}
+        for name, func in dis.functions.items():
+            if pat and not pat.search(name):
+                continue
+            depths = cfg[name].loop_depth if name in cfg else {}
+            slices = why_kernel(func, dims, target_addr=target, loop_depth=depths)
+            if slices:
+                results.append({"unit": unit.label, "kernel": name, "slices": slices})
+
+    doc = {"schema": "cuxray.why/1", "results": results}
+
+    def human():
+        if not results:
+            console.print("[green]every access analyzable — nothing to explain[/]")
+            return
+        for r in results:
+            console.print(f"\n[bold]{r['kernel'][:100]}[/]  [dim]({r['unit']})[/]")
+            for s in r["slices"]:
+                t = s["target"]
+                loc = f"  [{t['file'].rsplit('/', 1)[-1]}:{t['line']}]" if t.get("line") else ""
+                console.print(f"  [yellow]{hex(t['addr'])}[/] {t['opcode']} "
+                              f"[{t['mem']}]{loc}"
+                              + (f"  — {s['reason']}" if s.get("reason") else ""))
+                console.print(f"    address = {s['address_value']}")
+                for row in reversed(s["chain"]):
+                    mark = "  [red]◀ precision lost here[/]" if row.get("degrades_here") else ""
+                    console.print(f"    {hex(row['addr']):>8} {row['opcode']:<16} "
+                                  f"{row['operands'][:60]:<62} {row['value'][:44]}{mark}")
+                if s["unresolved_inputs"]:
+                    console.print(f"    [dim]inputs not sliced: "
+                                  f"{', '.join(s['unresolved_inputs'])}[/]")
+
+    _emit(doc, as_json, output, human)
+    sys.exit(0)
+
+
+@main.command()
 @click.argument("src", type=click.Path(exists=True))
 @click.option("--arch", required=True, help="e.g. sm_120a")
 @click.option("--define", "-D", "defines", multiple=True,
@@ -353,11 +443,16 @@ def tune(src, arch, defines, flags, threads, smem_dynamic, as_json, output):
 @click.argument("path", type=click.Path(exists=True))
 @click.option("--kernel", "kernel_re", default=None, help="regex filter on kernel names")
 @click.option("--arch", default=None, help="architecture for .ptx input")
+@click.option("--threads", type=str, default=None,
+              help="block shape — adds bytes/iter + stall cycles per 512 B")
 @click.option("--json", "as_json", is_flag=True)
 @click.option("--output", "-o", default=None, help="write JSON to a file")
-def sched(path, kernel_re, arch, as_json, output):
+def sched(path, kernel_re, arch, threads, as_json, output):
     """Per-loop cycle estimates from the compiler's embedded schedule
-    (sm_80-sm_90a; encodings for other architectures are unverified)."""
+    (sm_80-sm_90a; encodings for other architectures are unverified).
+
+    With --threads, loops also get global bytes/iter and stall cycles per
+    512 B streamed — comparable across kernels of different widths."""
     from .analyze.schedule import loop_schedule
     from .parse import cfgdot, ctrl, sass
     from .ingest import ingest
@@ -387,10 +482,24 @@ def sched(path, kernel_re, arch, as_json, output):
             cfg = cfgdot.parse(tc.run("nvdisasm", ["-cfg", cubin]))
         except Exception:
             cfg = {}
+        dims = None
+        if threads:
+            from .report import parse_block_dims
+            dims, _total = parse_block_dims(threads)
         for name, func in dis.functions.items():
             if pat and not pat.search(name):
                 continue
-            rows = loop_schedule(func, cfg.get(name), controls.get(name, {}))
+            bpi = None
+            if dims is not None:
+                from .analyze.access import analyze_accesses
+                from .analyze.roofline import loop_report
+                fcfg = cfg.get(name)
+                depths = fcfg.loop_depth if fcfg else {}
+                acc = analyze_accesses(func, dims, depths)
+                bpi = {r["header"]: r["est_global_bytes_per_warp_iter"]
+                       for r in loop_report(func, fcfg, acc["accesses"])
+                       if r.get("est_global_bytes_per_warp_iter")}
+            rows = loop_schedule(func, cfg.get(name), controls.get(name, {}), bpi)
             if rows:
                 results.append({"unit": unit.label, "kernel": name,
                                 "arch": arch_eff, "loops": rows})
@@ -412,9 +521,19 @@ def sched(path, kernel_re, arch, as_json, output):
                     f"cycles/iter · {lp['scoreboard_waits_per_iter']} scoreboard "
                     f"wait(s) not included"
                 )
-                for t in lp["top_stall_lines"][:3]:
-                    loc = f"{(t['file'] or '?').rsplit('/', 1)[-1]}:{t['line']}"
-                    console.print(f"      {loc}: {t['est_stall_cycles']} cycles")
+                if lp.get("est_stall_cycles_per_512B") is not None:
+                    console.print(
+                        f"      [bold]{lp['est_stall_cycles_per_512B']}[/] stall "
+                        f"cycles per 512 B streamed "
+                        f"({lp['est_global_bytes_per_warp_iter']} B/iter)")
+                if lp["top_stall_lines"]:
+                    for t in lp["top_stall_lines"][:3]:
+                        loc = f"{(t['file'] or '?').rsplit('/', 1)[-1]}:{t['line']}"
+                        console.print(f"      {loc}: {t['est_stall_cycles']} cycles")
+                else:  # no lineinfo in the binary — attribute by opcode
+                    for t in lp.get("top_stall_opcodes", [])[:4]:
+                        console.print(f"      {t['opcode']:<10} x{t['count']}: "
+                                      f"{t['est_stall_cycles']} cycles")
 
     _emit(doc, as_json, output, human)
 

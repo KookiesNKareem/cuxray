@@ -220,7 +220,9 @@ def step(instr: Instruction, st: State, tids: dict[str, lv.Value]) -> None:
         if m:
             assign(tids[m.group(1).lower()])
         elif _CTAID.search(src):
-            assign(lv.uniform_unknown(ctaid=True))
+            axis = _CTAID.search(src).group(1).lower()
+            known = tids.get("_ctaid", {}) if isinstance(tids.get("_ctaid"), dict) else {}
+            assign(known.get(axis) or lv.uniform_unknown(ctaid=True))
         elif "SR_LANEID" in src:
             assign(lv.pure(range(32)))
         elif re.search(r"SR_LANEMASK_?(EQ|LT|LE|GT|GE)", src):
@@ -364,7 +366,26 @@ def step(instr: Instruction, st: State, tids: dict[str, lv.Value]) -> None:
         return
 
     if base == "PRMT":
-        assign(lv.varying("unmodeled PRMT"))
+        # PRMT Rd, Ra, sel, Rb — output byte i = byte sel.nibble(i) of
+        # {Rb:Ra}; selector bit 3 replicates the chosen byte's sign bit.
+        # Mode suffixes (.F4E, .B4E, ...) permute differently — fall back.
+        if op.split(".")[1:] in ([], ["U32"]) and len(srcs) >= 3:
+            a, s, b = (_operand_value(o, st) for o in srcs[:3])
+            if all(v.kind == lv.PURE for v in (a, s, b)):
+                outs = []
+                for x, sel, y in zip(a.vec, s.vec, b.vec):
+                    src_bytes = x.to_bytes(4, "little") + y.to_bytes(4, "little")
+                    r = 0
+                    for i in range(4):
+                        nib = (sel >> (4 * i)) & 0xF
+                        byte = src_bytes[nib & 7]
+                        if nib & 8:
+                            byte = 0xFF if byte & 0x80 else 0x00
+                        r |= byte << (8 * i)
+                    outs.append(r)
+                assign(lv.pure(outs))
+                return
+        fallback("unmodeled PRMT")
         return
 
     if base.startswith(("LD", "ATOM", "RED", "TLD", "SULD")):
@@ -418,10 +439,18 @@ def analyze(func: Function, block_dims: tuple[int, int, int],
 
 
 def analyze_ex(func: Function, block_dims: tuple[int, int, int],
-               max_iters: int = 8) -> tuple[dict[int, State], dict]:
+               max_iters: int = 8,
+               grid_dims: Optional[tuple[int, int, int]] = None
+               ) -> tuple[dict[int, State], dict]:
     """Like analyze(), plus {"converged": bool, "unreached_blocks": int} so
-    callers can surface incomplete analysis instead of silently degrading."""
+    callers can surface incomplete analysis instead of silently degrading.
+
+    grid_dims (when known) resolves singleton blockIdx components to the
+    constant 0 — removing false block-dependence taint on their users."""
     tids = lv.tid_vectors(block_dims)
+    if grid_dims:
+        tids["_ctaid"] = {axis: lv.const(0)
+                          for axis, n in zip("xyz", grid_dims) if n == 1}
 
     # Partition instructions into blocks by label (matches -cfg node names)
     blocks: list[list[Instruction]] = []

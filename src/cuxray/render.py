@@ -150,6 +150,16 @@ def _render_kernel(k: dict, console: Console) -> None:
                 f"    [dim]{acc['unanalyzed_count']} access(es) not analyzable "
                 f"(mostly: {top[0]})[/]"
             )
+    gt = k.get("grid_traffic")
+    if gt and gt["invariant_bytes_per_warp_iter"]:
+        console.print(
+            f"    [magenta]est.[/] grid {gt['grid_blocks']} blocks: "
+            f"{gt['invariant_bytes_per_warp_iter']} B/warp-iter block-invariant "
+            f"({gt['invariant_fraction'] * 100:.0f}% of loop traffic) → "
+            f"worst-case (L2-cold) traffic ×{gt['worst_amplification']} — "
+            f"amortize with more rows/block or protect L2 with __ldcs on "
+            f"streaming data"
+        )
     loops = k.get("roofline") or []
     hot = [r for r in loops if r["loop_depth"] >= 1][:3]
     for r in hot:

@@ -83,7 +83,7 @@ def loop_report(func: Function, cfg: Optional[FunctionCFG],
                 else:
                     mma_flops += f
 
-        gbytes = gbytes_ideal = 0
+        gbytes = gbytes_ideal = invariant_bytes = 0
         smem_wavefronts = smem_wavefronts_ideal = 0
         approximate_traffic = False
         for i in instrs:
@@ -93,6 +93,8 @@ def loop_report(func: Function, cfg: Optional[FunctionCFG],
                 if a and "sectors_worst" in a:
                     gbytes += a["sectors_worst"] * 32
                     gbytes_ideal += a["sectors_ideal"] * 32
+                    if a.get("block_invariant"):
+                        invariant_bytes += a["sectors_worst"] * 32
                 elif base != "LDGSTS":
                     width = 4
                     gbytes += width * _LANE
@@ -123,6 +125,7 @@ def loop_report(func: Function, cfg: Optional[FunctionCFG],
                                        if smem_wavefronts_ideal else None),
             "est_arithmetic_intensity": (round(total_flops / gbytes, 3)
                                          if gbytes else None),
+            "est_block_invariant_bytes_per_warp_iter": invariant_bytes,
             "approximate_traffic": approximate_traffic,
         }
         rows.append(row)
