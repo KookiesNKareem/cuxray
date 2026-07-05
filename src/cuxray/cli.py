@@ -349,6 +349,76 @@ def tune(src, arch, defines, flags, threads, smem_dynamic, as_json, output):
     _emit(doc, as_json, output, human)
 
 
+@main.command()
+@click.argument("path", type=click.Path(exists=True))
+@click.option("--kernel", "kernel_re", default=None, help="regex filter on kernel names")
+@click.option("--arch", default=None, help="architecture for .ptx input")
+@click.option("--json", "as_json", is_flag=True)
+@click.option("--output", "-o", default=None, help="write JSON to a file")
+def sched(path, kernel_re, arch, as_json, output):
+    """Per-loop cycle estimates from the compiler's embedded schedule
+    (sm_80-sm_90a; encodings for other architectures are unverified)."""
+    from .analyze.schedule import loop_schedule
+    from .parse import cfgdot, ctrl, sass
+    from .ingest import ingest
+
+    tc = _toolchain(str(path).endswith(".ptx"))
+    try:
+        units = ingest(Path(path), tc, arch=arch)
+    except Exception as e:
+        err.print(f"[red]error:[/] {e}")
+        sys.exit(2)
+    pat = re.compile(kernel_re) if kernel_re else None
+
+    results = []
+    for unit in units:
+        cubin = str(unit.cubin)
+        dis = sass.parse_gi(tc.run("nvdisasm", ["-c", "-gi", cubin]))
+        from .parse import elf as _elf
+        arch_eff = dis.target or _elf.sm_arch(unit.cubin.read_bytes())
+        if not ctrl.arch_supported(arch_eff):
+            err.print(f"[yellow]{unit.label}: control-bit encoding for "
+                      f"{arch_eff or 'unknown arch'} is unverified — skipping "
+                      "(supported: sm_80-sm_90a)[/]")
+            continue
+        controls = ctrl.parse_sass_controls(
+            tc.run("cuobjdump", ["-sass", cubin]))
+        try:
+            cfg = cfgdot.parse(tc.run("nvdisasm", ["-cfg", cubin]))
+        except Exception:
+            cfg = {}
+        for name, func in dis.functions.items():
+            if pat and not pat.search(name):
+                continue
+            rows = loop_schedule(func, cfg.get(name), controls.get(name, {}))
+            if rows:
+                results.append({"unit": unit.label, "kernel": name,
+                                "arch": arch_eff, "loops": rows})
+
+    doc = {"schema": "cuxray.sched/1", "results": results}
+
+    def human():
+        if not results:
+            console.print("[dim]no loops with schedule data[/]")
+            return
+        for r in results:
+            console.print(f"\n[bold]{r['kernel'][:100]}[/]  [dim]{r['arch']}[/]")
+            for lp in r["loops"][:4]:
+                span = (f"lines {lp['line_span'][0]}-{lp['line_span'][1]}"
+                        if lp["line_span"] else lp["header"])
+                console.print(
+                    f"  [magenta]est.[/] loop {span} (depth {lp['loop_depth']}): "
+                    f"[bold]{lp['est_issue_stall_cycles_per_iter']}[/] issue+stall "
+                    f"cycles/iter · {lp['scoreboard_waits_per_iter']} scoreboard "
+                    f"wait(s) not included"
+                )
+                for t in lp["top_stall_lines"][:3]:
+                    loc = f"{(t['file'] or '?').rsplit('/', 1)[-1]}:{t['line']}"
+                    console.print(f"      {loc}: {t['est_stall_cycles']} cycles")
+
+    _emit(doc, as_json, output, human)
+
+
 @main.command(name="tune-regs")
 @click.argument("ptx", type=click.Path(exists=True))
 @click.option("--arch", default=None, help="e.g. sm_120a (default: PTX .target)")

@@ -49,6 +49,11 @@ for arch in "${ARCHES[@]}"; do
     done
 done
 
+# Raw SASS with encoded words (control-bit decode fixtures)
+for arch in "${ARCHES[@]}"; do
+    cuobjdump -sass "$BIN/spill.${arch}.cubin" > "$REC/sasshex.spill.${arch}.txt"
+done
+
 # ELF header dumps for arch-detection fixtures (full output; head would SIGPIPE)
 cuobjdump -elf "$BIN/saxpy.sm_90.cubin" > "$REC/elfhdr.saxpy.sm_90.txt"
 cuobjdump -elf "$BIN/saxpy.sm_120a.cubin" > "$REC/elfhdr.saxpy.sm_120a.txt"

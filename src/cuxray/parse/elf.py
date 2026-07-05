@@ -2,10 +2,10 @@
 
 Gives cuxray three cheap facts without invoking nvdisasm:
   - machine():   e_machine (EM_CUDA=190 → cubin; otherwise host ELF)
-  - sm_arch():   architecture from e_flags bits 8..15 (0x5a → sm_90,
-                 0x78 → sm_120; verified against fixture cubins). The 'a'
-                 suffix is not recoverable here — full reports refine the
-                 arch from nvdisasm's `.target` line.
+  - sm_arch():   architecture from e_flags (bits 8-15 on CUDA 13.x tools,
+                 low byte on 12.x; disambiguated by SM plausibility). The
+                 'a' suffix is not recoverable here — full reports refine
+                 the arch from nvdisasm's `.target` line.
   - functions(): (symbol_index, name) for STT_FUNC symbols, in symtab order.
                  Symbol indices feed `nvdisasm -fun i,j,...` to restrict
                  disassembly to matching kernels.
@@ -29,12 +29,20 @@ def machine(data: bytes) -> Optional[int]:
     return struct.unpack_from("<H", data, 18)[0]
 
 
+_VALID_SM = {50, 52, 53, 60, 61, 62, 70, 72, 75, 80, 86, 87, 89, 90,
+             100, 101, 103, 110, 120, 121}
+
+
 def sm_arch(data: bytes) -> Optional[str]:
+    """SM number from e_flags. CUDA 13.x encodes it in bits 8-15; CUDA 12.x
+    and earlier in the low byte — disambiguated by plausibility."""
     if machine(data) != EM_CUDA:
         return None
     e_flags = struct.unpack_from("<I", data, 0x30)[0]
-    sm = (e_flags >> 8) & 0xFF
-    return f"sm_{sm}" if sm else None
+    for cand in ((e_flags >> 8) & 0xFF, e_flags & 0xFF):
+        if cand in _VALID_SM:
+            return f"sm_{cand}"
+    return None
 
 
 def _sections(data: bytes) -> list[dict]:

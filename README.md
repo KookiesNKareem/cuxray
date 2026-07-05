@@ -10,9 +10,11 @@ pressure, spills, occupancy, bank conflicts — **without a GPU**.
 cuxray reads the decisions the compiler froze into your cubin and combines
 them with NVIDIA's published architecture tables. Because those models are
 exact, it can go beyond reporting problems: it searches for fixes (shared-
-memory swizzles, register caps) and verifies them before suggesting them.
-Everything it reports is ground truth; anything unknowable is reported as
-unknowable, with the reason.
+memory swizzles, register caps, tile configurations) and verifies them
+before suggesting them. Measurements are ground truth; performance
+estimates (roofline, cycle counts) are explicitly labeled `est.` and
+validated against hardware; anything unknowable is reported as unknowable,
+with the reason.
 
 ```console
 $ pip install cuxray
@@ -39,13 +41,20 @@ $ cuxray report kernel.cubin --threads 256
 - Bank-conflict and coalescing analysis computed from per-lane address
   tracking in the SASS, including XOR-swizzled and `ldmatrix` layouts.
 - Register-pressure curves from `nvdisasm` life ranges, mapped to source.
+- Per-loop roofline estimates: FLOPs and memory traffic per warp-iteration,
+  arithmetic intensity, shared-memory replay and traffic-inflation factors.
+- Per-loop cycle estimates (`cuxray sched`) from the compiler's embedded
+  instruction schedule — validated within 1% of measured hardware cycles on
+  deterministic loops (sm_80–sm_90a).
 
 **Optimize**
 
 - `cuxray solve` searches CUTLASS-style swizzles and returns only layouts
   it has verified conflict-free for every shared access in the kernel.
 - `cuxray tune-regs` recompiles across `-maxrregcount` values and marks the
-  Pareto-optimal occupancy/spill trade-offs.
+  Pareto-optimal occupancy/spill trade-offs; `cuxray tune` sweeps whole
+  `-D` define matrices (tile shapes, stage counts) and ranks every variant
+  statically — autotuning's search space, cut before a GPU is involved.
 - Conflict reports include verified fix suggestions with their shared-memory
   cost and occupancy impact.
 
@@ -102,6 +111,14 @@ cuxray diff old.so new.so --fail-on-regression
   with: { path: build/kernels.so, gate: "spill_instrs==0", threads: "256" }
 ```
 
+**Estimate cycles** — the compiler's own schedule, summed per loop:
+
+```console
+$ cuxray sched kernel.cubin
+  est. loop lines 12-14 (depth 1): 466 issue+stall cycles/iter
+      spill.cu:14: 374 cycles     # the spills ARE the stall cost
+```
+
 **What-if** — no binary needed:
 
 ```console
@@ -140,6 +157,9 @@ complete record of what the hardware will do — reading it is not simulation.
 - Bank verdicts: hardware-timed (flagged kernel 12× slower than its clean
   twin; swizzled and padded twins within 2%); `solve` re-derives the
   canonical CUTLASS `Swizzle<3,4,3>` for 128-byte fp16 tiles.
+- Cycle estimates: control-bit decode confirmed via scoreboard pairing and
+  known FP32 latencies; loop estimate within 0.7% of `clock64()`-measured
+  cycles on hardware.
 - Robustness: ~161k production kernels (vLLM, PyTorch wheels) analyzed with
   zero crashes and zero false-positive conflict flags.
 
