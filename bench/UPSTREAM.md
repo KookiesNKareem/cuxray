@@ -194,3 +194,31 @@ zeros/act-order gating in `can_implement` — start sym g=128 only, bf16
 activation staging with fp16-convert in the smem pass); measure the
 batch crossover vs Marlin (expect ~8); position opt-in with data first,
 since default-on regresses prefill vs Marlin.
+
+
+## Kernel hunt round 2 (2026-07-05): cuxray sweep of llama.cpp CUDA backend
+
+Ran `cuxray advise` across the built libggml-cuda.so kernels (sm_86) to find
+a PR-worthy inefficiency in younger/hot code. cuxray surfaced real findings;
+none cleared the bar, and understanding *why* is the useful result:
+
+- **topk_moe_cuda<256>** (DeepSeek-scale MoE routing): 46 spill stores /
+  30 loads, 496 B/thread local traffic. BUT regs=31, occupancy=100%
+  (limiter=warps) — the spill is ptxas's own occupancy-preserving choice,
+  not a hard pressure wall. And MoE *routing* is negligible next to the
+  expert *matmuls* it precedes, so even a 2x routing speedup is ~0
+  end-to-end. Not worth a PR.
+- **mul_mat_vec_f (bf16)**: 6 uncoalesced global accesses (44% efficiency)
+  but only ×1.17 overall traffic inflation, partial coverage — a minor,
+  likely-known layout tradeoff.
+- **flash_attn_tile**: 70 8-way bank conflicts + a register cliff
+  (33%→50% at -21 regs). Real, but FA has a standing optimization army and
+  the conflicts are plausibly an intentional padding tradeoff; not a fight
+  worth picking.
+
+Verdict: mature llama.cpp CUDA kernels are near-optimal (this echoes the
+earlier mmvq dry run). cuxray *works* — it found the issues and, crucially,
+gave the numbers to reject each — but the PR-worthy opportunity is a
+capability gap, not a marginal win in tuned code. That gap is vLLM W4A8
+on Ampere (branches banked, Track 3). The `advise` verdicts here are the
+tool doing exactly its job: telling you where NOT to spend effort.
