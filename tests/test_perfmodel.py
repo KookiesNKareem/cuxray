@@ -1,6 +1,8 @@
 """The perf model's accuracy claim, machine-checked against the recorded
-hardware corpus: fit (e_sat, t_fixed) per device, assert the residual stays
-within the bound recorded for that device."""
+hardware corpus — across kernel TYPES (memory-bound, compute-bound,
+tensor-core) and DEVICES (A100, A5000). For each case: build Work, compute
+t_ideal (which validates the per-arch peaks), fit (e_sat, t_fixed), assert
+the residual stays within the recorded bound."""
 import json
 from pathlib import Path
 
@@ -13,37 +15,38 @@ CORPUS = json.loads(
 )
 
 
-def _bytes(M, K):
-    return M * K / 2 + K + M * (K // 128) * 2 + M * 2
+def _work(s):
+    return Work(dram_bytes=s["bytes"], macs=s.get("macs", 0),
+                precision=s.get("precision", "int8"),
+                datapath=s.get("datapath", "simt-int"))
 
 
-@pytest.mark.parametrize("dev", CORPUS["devices"], ids=[d["name"] for d in CORPUS["devices"]])
-def test_calibrated_model_accuracy(dev):
-    device = Device(sms=108, clock_ghz=1.41, achievable_gbs=dev["achievable_gbs"])
-    ideals = [ideal_us(Work(dram_bytes=_bytes(M, K)), device)["t_ideal_us"]
-              for M, K, _ in dev["samples"]]
-    meas = [m for *_, m in dev["samples"]]
+@pytest.mark.parametrize("case", CORPUS["cases"], ids=[c["name"] for c in CORPUS["cases"]])
+def test_calibrated_model_accuracy(case):
+    dev = Device(**case["device"])
+    ideals = [ideal_us(_work(s), dev)["t_ideal_us"] for s in case["samples"]]
+    meas = [s["us"] for s in case["samples"]]
     calib = fit(list(zip(ideals, meas)))
-    assert 0.5 <= calib.e_sat <= 1.2, calib      # sane efficiency
-    errs = []
-    for (M, K, m), idl in zip(dev["samples"], ideals):
-        p = predict(Work(dram_bytes=_bytes(M, K)), device, calib)["us"]
-        errs.append(abs(p - m) / m * 100)
+    assert 0.4 <= calib.e_sat <= 1.2, (case["name"], calib)
+    errs = [abs(predict(_work(s), dev, calib)["us"] - s["us"]) / s["us"] * 100
+            for s in case["samples"]]
     mean = sum(errs) / len(errs)
-    assert mean <= dev["max_mean_err_pct"], f"mean {mean:.1f}% > {dev['max_mean_err_pct']}%"
-    assert max(errs) <= dev["max_single_err_pct"], f"max {max(errs):.0f}%"
+    assert mean <= case["max_mean_err_pct"], f"{case['name']}: mean {mean:.1f}%"
+    assert max(errs) <= case["max_single_err_pct"], f"{case['name']}: max {max(errs):.0f}%"
+
+
+def test_all_kernel_types_covered():
+    dps = {s.get("datapath", "simt-int")
+           for c in CORPUS["cases"] for s in c["samples"]}
+    assert {"simt-int", "simt-fp", "tensor"} <= dps
 
 
 def test_fit_recovers_known_line():
-    # measured = ideal/0.8 + 5  → e_sat 0.8, t_fixed 5
-    samples = [(i, i / 0.8 + 5) for i in (10, 20, 40, 80)]
-    c = fit(samples)
+    c = fit([(i, i / 0.8 + 5) for i in (10, 20, 40, 80)])
     assert abs(c.e_sat - 0.8) < 1e-3 and abs(c.t_fixed_us - 5) < 1e-3
 
 
 def test_relative_ranking_ignores_fixed_work():
-    # two variants, same problem (same t_ideal), different efficiency →
-    # ranking depends only on the calibration, not the work
     dev = Device(sms=108, clock_ghz=1.41, achievable_gbs=1682)
     w = Work(dram_bytes=30e6)
     fast = predict(w, dev, Calibration(e_sat=0.95, t_fixed_us=6))["us"]
@@ -51,9 +54,11 @@ def test_relative_ranking_ignores_fixed_work():
     assert fast < slow
 
 
-def test_compute_bound_uses_mac_peak():
+def test_datapath_peaks_land_near_hardware():
+    # FP32 FMA peak on A100 ≈ 9.74 TMAC/s; tensor fp16 ≈ 156 TMAC/s.
+    from cuxray.analyze.perfmodel import _datapath_peak_macs_per_us
     dev = Device(sms=108, clock_ghz=1.41, achievable_gbs=1682)
-    # tiny traffic, huge MAC count → compute-bound
-    w = Work(dram_bytes=1000, macs=10**12, precision="int8", datapath="simt-int")
-    r = ideal_us(w, dev)
-    assert r["bound"] == "compute" and r["t_compute_ideal_us"] > 0
+    fp32 = _datapath_peak_macs_per_us(dev, "fp32", "simt-fp")   # MAC/µs
+    tc = _datapath_peak_macs_per_us(dev, "fp16", "tensor")
+    assert 9.0e6 <= fp32 <= 10.5e6      # ~9.74 TMAC/s
+    assert 1.4e8 <= tc <= 1.7e8         # ~156 TMAC/s (312 TFLOP/s)

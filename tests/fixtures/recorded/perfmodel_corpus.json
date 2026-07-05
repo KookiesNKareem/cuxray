@@ -1,29 +1,270 @@
 {
-  "$comment": "Measured wall-clock corpus for the calibrated-roofline perf model. Full-path W4A8 decode GEMV, batch 1, CUDA-graph timed. bytes = M*K/2 + K + M*(K/128)*2 + M*2. test_perfmodel.py fits (e_sat, t_fixed) per device and asserts the residual stays within the recorded bound. Regenerate: sweep gemv shapes on the device, record measured us.",
-  "devices": [
+  "$comment": "Measured wall-clock corpus for the calibrated-roofline perf model, spanning kernel TYPES (memory / compute / tensor) and DEVICES (A100, A5000). Each sample {bytes, macs, precision, datapath, us}. test_perfmodel.py builds Work, computes t_ideal (validating peaks), fits (e_sat,t_fixed), asserts residual within bound. Regenerate: scratchpad fma_bench.cu / tc_bench.py / gemv sweep.",
+  "cases": [
     {
-      "name": "A100-SXM4-80GB (sm_80)",
-      "achievable_gbs": 1682,
+      "name": "memory-bound W4A8 decode GEMV, A100 (sm_80)",
+      "device": {
+        "sms": 108,
+        "clock_ghz": 1.41,
+        "achievable_gbs": 1682
+      },
       "max_mean_err_pct": 13.0,
       "max_single_err_pct": 32.0,
       "samples": [
-        [2048, 2048, 12.2], [4096, 2048, 16.2], [4096, 4096, 15.5],
-        [8192, 4096, 15.9], [11008, 4096, 18.5], [2048, 8192, 14.0],
-        [4096, 8192, 16.0], [4096, 11008, 18.9], [4096, 14336, 24.4],
-        [8192, 14336, 46.0], [16384, 4096, 28.7], [4096, 16384, 27.7],
-        [12288, 6144, 31.3], [6144, 12288, 33.7]
+        {
+          "bytes": 2168832,
+          "macs": 0,
+          "us": 12.2
+        },
+        {
+          "bytes": 4335616,
+          "macs": 0,
+          "us": 16.2
+        },
+        {
+          "bytes": 8663040,
+          "macs": 0,
+          "us": 15.5
+        },
+        {
+          "bytes": 17321984,
+          "macs": 0,
+          "us": 15.9
+        },
+        {
+          "bytes": 23275008,
+          "macs": 0,
+          "us": 18.5
+        },
+        {
+          "bytes": 8663040,
+          "macs": 0,
+          "us": 14.0
+        },
+        {
+          "bytes": 17317888,
+          "macs": 0,
+          "us": 16.0
+        },
+        {
+          "bytes": 23268096,
+          "macs": 0,
+          "us": 18.9
+        },
+        {
+          "bytes": 30300160,
+          "macs": 0,
+          "us": 24.4
+        },
+        {
+          "bytes": 60585984,
+          "macs": 0,
+          "us": 46.0
+        },
+        {
+          "bytes": 34639872,
+          "macs": 0,
+          "us": 28.7
+        },
+        {
+          "bytes": 34627584,
+          "macs": 0,
+          "us": 27.7
+        },
+        {
+          "bytes": 38959104,
+          "macs": 0,
+          "us": 31.3
+        },
+        {
+          "bytes": 38952960,
+          "macs": 0,
+          "us": 33.7
+        }
       ]
     },
     {
-      "name": "RTX A5000 (sm_86)",
-      "achievable_gbs": 681,
+      "name": "memory-bound W4A8 decode GEMV, A5000 (sm_86)",
+      "device": {
+        "sms": 64,
+        "clock_ghz": 1.695,
+        "achievable_gbs": 681
+      },
       "max_mean_err_pct": 6.0,
       "max_single_err_pct": 12.0,
       "samples": [
-        [2048, 2048, 8.6], [4096, 4096, 19.5], [8192, 4096, 30.9],
-        [11008, 4096, 38.5], [4096, 8192, 31.5], [4096, 11008, 39.4],
-        [4096, 14336, 49.3], [8192, 14336, 92.5], [16384, 4096, 54.0],
-        [6144, 12288, 61.5]
+        {
+          "bytes": 2168832,
+          "macs": 0,
+          "us": 8.6
+        },
+        {
+          "bytes": 8663040,
+          "macs": 0,
+          "us": 19.5
+        },
+        {
+          "bytes": 17321984,
+          "macs": 0,
+          "us": 30.9
+        },
+        {
+          "bytes": 23275008,
+          "macs": 0,
+          "us": 38.5
+        },
+        {
+          "bytes": 17317888,
+          "macs": 0,
+          "us": 31.5
+        },
+        {
+          "bytes": 23268096,
+          "macs": 0,
+          "us": 39.4
+        },
+        {
+          "bytes": 30300160,
+          "macs": 0,
+          "us": 49.3
+        },
+        {
+          "bytes": 60585984,
+          "macs": 0,
+          "us": 92.5
+        },
+        {
+          "bytes": 34639872,
+          "macs": 0,
+          "us": 54.0
+        },
+        {
+          "bytes": 38952960,
+          "macs": 0,
+          "us": 61.5
+        }
+      ]
+    },
+    {
+      "name": "compute-bound FP32 FMA throughput, A100 (sm_80)",
+      "device": {
+        "sms": 108,
+        "clock_ghz": 1.41,
+        "achievable_gbs": 1682
+      },
+      "max_mean_err_pct": 5.0,
+      "max_single_err_pct": 13.0,
+      "samples": [
+        {
+          "bytes": 1000,
+          "macs": 14155776000,
+          "precision": "fp32",
+          "datapath": "simt-fp",
+          "us": 1736.7
+        },
+        {
+          "bytes": 1000,
+          "macs": 28311552000,
+          "precision": "fp32",
+          "datapath": "simt-fp",
+          "us": 2912.6
+        },
+        {
+          "bytes": 1000,
+          "macs": 56623104000,
+          "precision": "fp32",
+          "datapath": "simt-fp",
+          "us": 5818.5
+        },
+        {
+          "bytes": 1000,
+          "macs": 113246208000,
+          "precision": "fp32",
+          "datapath": "simt-fp",
+          "us": 11627.0
+        },
+        {
+          "bytes": 1000,
+          "macs": 226492416000,
+          "precision": "fp32",
+          "datapath": "simt-fp",
+          "us": 23250.6
+        },
+        {
+          "bytes": 1000,
+          "macs": 452984832000,
+          "precision": "fp32",
+          "datapath": "simt-fp",
+          "us": 46500.2
+        }
+      ]
+    },
+    {
+      "name": "tensor-core fp16 GEMM (cuBLAS), A100 (sm_80)",
+      "device": {
+        "sms": 108,
+        "clock_ghz": 1.41,
+        "achievable_gbs": 1682
+      },
+      "max_mean_err_pct": 8.0,
+      "max_single_err_pct": 25.0,
+      "samples": [
+        {
+          "bytes": 100663296,
+          "macs": 68719476736,
+          "precision": "fp16",
+          "datapath": "tensor",
+          "us": 612.9
+        },
+        {
+          "bytes": 402653184,
+          "macs": 549755813888,
+          "precision": "fp16",
+          "datapath": "tensor",
+          "us": 4424.1
+        },
+        {
+          "bytes": 213909504,
+          "macs": 184683593728,
+          "precision": "fp16",
+          "datapath": "tensor",
+          "us": 1598.1
+        },
+        {
+          "bytes": 419430400,
+          "macs": 481036337152,
+          "precision": "fp16",
+          "datapath": "tensor",
+          "us": 3949.7
+        },
+        {
+          "bytes": 25165824,
+          "macs": 8589934592,
+          "precision": "fp16",
+          "datapath": "tensor",
+          "us": 81.1
+        },
+        {
+          "bytes": 213909504,
+          "macs": 184683593728,
+          "precision": "fp16",
+          "datapath": "tensor",
+          "us": 1462.8
+        },
+        {
+          "bytes": 301989888,
+          "macs": 274877906944,
+          "precision": "fp16",
+          "datapath": "tensor",
+          "us": 2218.5
+        },
+        {
+          "bytes": 226492416,
+          "macs": 231928233984,
+          "precision": "fp16",
+          "datapath": "tensor",
+          "us": 1862.0
+        }
       ]
     }
   ]
