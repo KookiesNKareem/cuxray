@@ -1,246 +1,151 @@
 # cuxray
 
-**Hardware-free static analyzer for CUDA kernel binaries.** Point it at a
-`.cubin`, a compiled `.so`, or a Triton cache and get source-attributed
-register pressure, spill locations, and occupancy analysis — plus diffs
-between builds and a CI gate. **No GPU required, ever.**
+[![PyPI](https://img.shields.io/pypi/v/cuxray.svg)](https://pypi.org/project/cuxray/)
+[![CI](https://github.com/KookiesNKareem/cuxray/actions/workflows/ci.yml/badge.svg)](https://github.com/KookiesNKareem/cuxray/actions)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
-Everything cuxray reports is either read out of the binary (decisions the
-compiler already froze into the SASS) or computed from NVIDIA's published
-architecture tables. It never estimates.
+Static analysis for CUDA kernel binaries — register pressure, spills,
+occupancy, bank conflicts — **without a GPU**.
+
+cuxray reads the decisions the compiler froze into your cubin and combines
+them with NVIDIA's published architecture tables. It never estimates and
+never guesses: every number is ground truth, and anything unknowable is
+reported as unknowable, with the reason.
 
 ```console
 $ pip install cuxray
 $ cuxray report kernel.cubin --threads 256
-$ cuxray diff old.so new.so --kernel "moe.*"
-$ cuxray gate build/kernels.so "spill_instrs==0, regs<=168"
+
+  moe_gemm(float const*, float*, int)
+    regs 168 · smem 8 KB
+    spills: 24 stores (96 B) / 24 loads (96 B)
+  location         stores   loads   loop depth
+  moe_gemm.cu:145  24       24      1 🔥
+    peak pressure: 166 live GPRs at moe_gemm.cu:142
+    occupancy @256 thr: 16.7% (1 blocks/SM) — limiter: registers
+      cliff: registers → 128 (-40) gives 2 blocks/SM (33.3%)
 ```
 
-Runs on any Linux machine — laptops, CI runners, containers. If no CUDA
-toolkit is installed, cuxray fetches pinned, sha256-verified binary utilities
-(`nvdisasm`, `cuobjdump`, `ptxas`) from NVIDIA's official redistributable
-archive on first use (x86_64 and aarch64).
+## Highlights
 
-## Why
+- **Spills, located.** Every spill instruction mapped to a source line and
+  weighted by loop depth — not one aggregate number per kernel.
+- **Occupancy with cliffs.** Blocks/SM, the binding limiter(s), and the
+  nearest boundary ("8 fewer registers buys a block").
+- **Bank conflicts & coalescing, statically.** Per-lane address analysis
+  straight from SASS, including XOR-swizzled and `ldmatrix` layouts.
+- **Fixes that are proven, not guessed.** `solve` searches CUTLASS-style
+  swizzles and returns only layouts verified conflict-free for *every*
+  access in the kernel.
+- **Frontier tuning.** `tune-regs` recompiles across `-maxrregcount` values
+  and marks the Pareto-optimal occupancy/spill trade-offs.
+- **CI-native.** `gate` exit codes, per-kernel budget files, build-to-build
+  `diff` with regression detection, SARIF for PR annotations, a reusable
+  GitHub Action, stable JSON everywhere.
+- **Zero setup.** Runs on any Linux machine; pinned NVIDIA binary utilities
+  are fetched (sha256-verified) on first use. Works on binaries you didn't
+  build — a vLLM wheel, a Triton cache, a `.so` from PyPI.
 
-- **Spills are silent.** `ptxas -v` tells you "548 bytes spill stores" per
-  kernel — not which loop, not which variable. cuxray tells you the source
-  line, and whether the spill sits in your inner loop or the prologue.
-- **Occupancy cliffs are invisible.** Register allocation is quantized; one
-  extra register can cost a whole block per SM. cuxray names the binding
-  limiter and the nearest cliff.
-- **Profiling needs privileged GPUs.** Rented and containerized GPUs often
-  can't run Nsight Compute at all (`ERR_NVGPU_CTRPERM`). cuxray's entire
-  analysis needs no GPU — it works where you compile, not where you run.
-- **Agents need structured feedback.** Every command has `--json` with a
-  stable, versioned schema, and `gate` communicates through exit codes —
-  script it, CI it, or hand it to a coding agent as a documented CLI.
+## Usage
 
-## What it reports
-
-`cuxray report kernel.cubin --threads 256`:
-
-```text
-spill.sm_120a.cubin  sm_120a
-
-  spilly(float const*, float*, int, int)
-    regs 32 · stack 208 B
-    spills: 135 stores (548 B) / 137 loads (556 B)
-  location       stores    loads    loop depth
-  spill.cu:14    57        59       1 🔥
-  spill.cu:13    22        22       1 🔥
-  spill.cu:10    56        45       0
-  spill.cu:18    0         11       0
-    peak pressure: 30 live GPRs at spill.cu:10
-    occupancy @256 thr: 100.0% (6 blocks/SM, 48/48 warps) — limiter: warps
-```
-
-- **Registers** — per-kernel usage and the per-source-line *pressure curve*
-  (which line holds the most live registers), from `nvdisasm` life ranges.
-- **Spills** — every `STL`/`LDL` mapped to a source line and weighted by loop
-  depth from the control-flow graph. Spill *bytes* are computed from SASS
-  access widths and reproduce `ptxas -v`'s byte counts exactly (pinned by a
-  test), so they work on binaries you didn't compile.
-- **Occupancy** — a faithful port of NVIDIA's `cuda_occupancy.h` algorithm
-  (validated against it on 4,300+ configs, and against real hardware):
-  blocks/SM, the binding limiter(s), and cliff detection. Kernels that
-  allocate shared memory dynamically (CUTLASS, FlashAttention) take
-  `--smem-dynamic N` — that size is a launch parameter, not in the binary,
-  and cuxray warns when it's needed rather than reporting a wrong number.
-- **Access patterns** — static shared-memory bank-conflict and global
-  coalescing analysis (see below).
-
-### Bank conflicts and coalescing, without running anything
-
-Give `--threads` a block shape (`256` or `32,8`) and cuxray traces how every
-shared/global access's address varies **across the 32 lanes of a warp**,
-directly from the SASS:
-
-```text
-  col_conflict(float const*, float*, int)
-    access issues: 224 conflicted shared · 0 uncoalesced global
-  location               issue                              count   loop depth
-  bank_conflict.cu:19    32-way bank conflict (stride 128 B)  224   1 🔥
-
-  xor_swizzle(float const*, float*, int)
-    access patterns clean (321 analyzed)
-```
-
-The analysis is exact where it answers: warp-uniform terms (loop counters,
-base pointers) cancel out of lane differences, and pure lane-index
-arithmetic — including the shift/AND/**XOR swizzles** CUTLASS uses — is
-evaluated bit-exactly, so swizzled layouts are *proven* clean rather than
-reported as unanalyzable. Anything data-dependent is reported as
-"can't analyze" with a reason, never guessed. Hardware check on the fixture
-patterns: the flagged 32-way kernel ran 12.3× slower than its padded twin;
-the swizzled kernel matched the clean one within 2%.
-
-Gate it in CI: `cuxray gate k.cubin "bank_ways<=2, uncoalesced==0" --threads 256`.
-
-Compile with `-lineinfo` (free — debug metadata only, no codegen impact) to
-get source attribution; without it cuxray reports SASS addresses.
-
-### Diff two builds
-
-Recompile the kernel above with `-maxrregcount 48` instead of 32:
-
-```text
-$ cuxray diff spill32.cubin spill48.cubin --threads 256
-┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━┳━━━━━━━┳━━━━━━┳━━━━━━━┓
-┃ kernel                                 ┃ metric             ┃   old ┃  new ┃     Δ ┃
-┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━╇━━━━━━━╇━━━━━━╇━━━━━━━┩
-│ spilly(float const*, float*, int, int) │ regs               │    32 │   48 │   +16 │
-│ spilly(float const*, float*, int, int) │ stack_frame        │   208 │    0 │  -208 │
-│ spilly(float const*, float*, int, int) │ spill_store_instrs │   135 │    0 │  -135 │
-│ spilly(float const*, float*, int, int) │ spill_load_instrs  │   137 │    0 │  -137 │
-│ spilly(float const*, float*, int, int) │ spill_bytes_total  │  1104 │    0 │ -1104 │
-│ spilly(float const*, float*, int, int) │ pressure_peak      │    30 │   46 │   +16 │
-│ spilly(float const*, float*, int, int) │ occupancy_pct      │ 100.0 │ 83.3 │ -16.7 │
-└────────────────────────────────────────┴────────────────────┴───────┴──────┴───────┘
-```
-
-The whole register/spill/occupancy trade-off in one table: +16 registers
-eliminated every spill, at the cost of 16.7 points of occupancy.
-
-### Gate resource regressions in CI
-
-As a GitHub Action (violations can annotate PRs via SARIF):
-
-```yaml
-- uses: KookiesNKareem/cuxray@main
-  with:
-    path: build/kernels.so
-    gate: "spill_instrs==0, regs<=168, bank_ways<=2"
-    threads: "256"
-    sarif: cuxray.sarif
-- uses: github/codeql-action/upload-sarif@v3
-  with: { sarif_file: cuxray.sarif }
-```
-
-Or by hand:
+**Inspect** — resources, spills, pressure, occupancy, access patterns
+(`--threads` is inferred from `.reqntid`/`__launch_bounds__` when present):
 
 ```console
-$ cuxray gate kernels.so "spill_instrs==0, regs<=168, occupancy(threads=256)>=25"
-✗ moe_gemm (kernels.so): spill_instrs=24 violates spill_instrs==0
-GATE FAILED — 1 violation(s)   (exit code 1)
+cuxray report kernels.so --kernel "moe.*" --threads 256
+cuxray ls kernels.so                      # fast listing, no disassembly
 ```
 
-Metrics: `regs`, `stack`, `smem`, `spill_instrs`, `spill_stores`,
-`spill_loads`, `spill_bytes`, `pressure_peak`, `occupancy(threads=N)`.
+**Fix bank conflicts** — derive a verified swizzle for the whole kernel:
 
-### Derive the fix, don't just find it
-
-`cuxray solve` searches XOR swizzles (CUTLASS `Swizzle<B,M,S>` convention)
-and returns only layouts **verified conflict-free for every shared access in
-the kernel jointly** — writes and reads together, which is where padding
-alone often can't win:
-
-```text
+```console
 $ cuxray solve kernel.cubin --threads 32
-  ldsm_row_major(...)
-  5 conflicted of 9 shared accesses
   solution: Swizzle<3,4,3>  (zero smem cost, verified on all accesses)
     apply to byte offsets: addr ^ ((addr >> 3) & 0x70)
     e.g. ldsm_async.cu:37 LDSM: 8-way → clean
 ```
 
-(That `Swizzle<3,4,3>` is the canonical CUTLASS 128-byte fp16 tile swizzle —
-the solver re-derives it from first principles and proves it against your
-actual access patterns.)
+**Tune register caps** — map the whole trade-off in seconds of CPU:
 
-`cuxray tune-regs kernel.ptx --threads 256` maps the `-maxrregcount`
-frontier by recompiling at a ladder of caps (seconds of CPU, no GPU):
-actual registers, spill bytes and locations, occupancy — with
-Pareto-optimal rows marked. On the spill fixture it shows ptxas's uncapped
-default is dominated: cap 48 gives zero spills *and* higher occupancy.
-
-### Occupancy what-if — no binary needed
-
-```text
-$ cuxray occupancy --arch sm_120 --regs 168 --threads 256
-sm_120 (Blackwell (RTX 50 / RTX PRO)) — 168 regs, 256 threads, 0 B smem
-  1 blocks/SM · 8/48 warps · 16.7% — limiter: registers
-  limits: {'warps': 6, 'blocks': 24, 'registers': 1, 'shared_memory': 100}
-  cliff (gain): registers → 128 (-40) gives 2 blocks/SM (33.3%)
+```console
+$ cuxray tune-regs kernel.ptx --threads 256
+   cap   regs   spill bytes   blocks/SM   occupancy
+    40     40           424           6      100.0%   ● pareto
+    48     48             0           5       83.3%   ● pareto
+  none     56             0           4       66.7%
 ```
 
-Add `--sweep` for a block-size sweep, `--smem N` for shared memory.
+**Gate regressions in CI** — exit 1 on violation, per-kernel budgets,
+SARIF annotations:
+
+```console
+cuxray gate kernels.so "spill_instrs==0, regs<=168, bank_ways<=2" --threads 256
+cuxray gate kernels.so --budget budgets.json --sarif out.sarif
+cuxray diff old.so new.so --fail-on-regression
+```
+
+```yaml
+- uses: KookiesNKareem/cuxray@main
+  with: { path: build/kernels.so, gate: "spill_instrs==0", threads: "256" }
+```
+
+**What-if** — no binary needed:
+
+```console
+cuxray occupancy --arch sm_120 --regs 168 --threads 256 --sweep
+```
+
+Every command takes `--json` / `-o` (schema: `cuxray schema`). `cuxray
+doctor` shows toolchain and cache state.
 
 ## Inputs
 
 | Input | Handling |
 |---|---|
-| `kernel.cubin` | analyzed directly |
-| host ELF (`.so`, `.o`, executable) | embedded cubins extracted via `cuobjdump`, all analyzed |
-| directory | recursive `*.cubin` walk (Triton cache layout) |
-| `kernel.ptx` | assembled with `ptxas` (arch from `.target` or `--arch`) |
+| `.cubin` | analyzed directly |
+| host ELF (`.so`, `.o`, executable) | embedded cubins extracted and analyzed |
+| directory | recursive `*.cubin` walk (Triton caches) |
+| `.ptx` | assembled with `ptxas` |
 
-Supported architectures: compute capability 7.5 through 12.x (Turing,
-Ampere, Ada, Hopper, Blackwell — including `a`-variant cubins like
-`sm_120a`).
-
-Repeated runs are fast: analysis results are cached on disk keyed by cubin
-content + toolchain + configuration (`--no-cache` bypasses).
+Architectures: compute capability 7.5–12.x (Turing → Blackwell, including
+`a`-variants like `sm_120a`).
 
 ## How it works
 
-cuxray drives three battle-tested NVIDIA tools and joins their output:
+`nvdisasm` life ranges give per-instruction register liveness with source
+mapping; `cuobjdump` provides per-kernel resources from any cubin; a lane-
+value dataflow over the SASS recovers how each memory address varies across
+the 32 lanes of a warp; occupancy is a port of NVIDIA's `cuda_occupancy.h`.
+GPUs execute SASS in order with no register renaming, so the binary is a
+complete record of what the hardware will do — reading it is not simulation.
 
-- `cuobjdump --dump-resource-usage` — registers, stack, shared memory per
-  kernel, from any cubin;
-- `nvdisasm -plr` — per-instruction register life ranges (the pressure
-  curve), joined by instruction address with `-gi` source-line mapping;
-- `nvdisasm -cfg` — control-flow graph, for loop-depth weighting of spills;
-- occupancy is computed from the algorithm in NVIDIA's `cuda_occupancy.h`
-  plus the capacity tables in the CUDA Programming Guide.
+## Validation
 
-None of these require a GPU. The GPU executes SASS in order, with no
-register renaming — so the binary is a complete record of what the hardware
-will do, and reading it is not a simulation.
+- Occupancy: 4,344/4,344 configs match NVIDIA's `cuda_occupancy.h` across
+  all supported architectures; 54/54 match the CUDA runtime on real hardware.
+- Spill bytes: byte-exact against `ptxas -v` across dtypes and architectures.
+- Bank verdicts: hardware-timed (flagged kernel 12× slower than its clean
+  twin; swizzled and padded twins within 2%); `solve` re-derives the
+  canonical CUTLASS `Swizzle<3,4,3>` for 128-byte fp16 tiles.
+- Robustness: ~161k production kernels (vLLM, PyTorch wheels) analyzed with
+  zero crashes and zero false-positive conflict flags.
 
-## Limitations (v0.1)
+## Limitations
 
-- Structural facts only: cache behavior, achieved bandwidth, and
-  data-dependent divergence need a profiler. cuxray is the predict half of
-  predict → measure → explain.
-- Block size and dynamic shared memory are runtime choices — pass `--threads`
-  and (when flagged) `--smem-dynamic` for occupancy analysis.
-- Kernel names are demangled via `c++filt` when available.
-- Linux only (NVIDIA publishes no macOS/Windows binary utilities; on a Mac,
-  run cuxray in any Linux container — no GPU passthrough needed).
+- Static facts only: cache behavior, achieved bandwidth, and data-dependent
+  addressing need a profiler; cuxray reports those accesses as unanalyzable
+  rather than guessing.
+- Block shape and dynamic shared memory are launch parameters — pass
+  `--threads` / `--smem-dynamic` when the binary carries no metadata (cuxray
+  warns when this matters).
+- Warp-specialized register reallocation (`setmaxnreg`) makes static
+  occupancy pessimistic; detected and flagged.
+- Linux only. Compile with `-lineinfo` for source attribution.
 
-## Roadmap
-
-- **Layer C** — control-bit/scheduling analysis: static stall estimates and
-  critical-path cycles from the compiler's own embedded schedule.
-
-Access-analysis limitations (v0.2): LDSM/STSM matrix loads, TMA/async
-copies, and generic (space-unknown) LD/ST are listed as unanalyzed rather
-than modeled; the analysis models warp 0 (representative whenever
-blockDim.x is a multiple of 32, noted otherwise); data-dependent gathers
-are honestly "can't analyze".
+Roadmap: scheduling/stall analysis from the compiler's embedded control bits.
 
 ## License
 
-Apache-2.0. Not affiliated with NVIDIA. CUDA binary utilities are downloaded
-from NVIDIA's redistributable archive under the [CUDA Toolkit EULA](https://docs.nvidia.com/cuda/eula/index.html).
+Apache-2.0. Not affiliated with NVIDIA; CUDA binary utilities are downloaded
+from NVIDIA's redistributable archive under the
+[CUDA Toolkit EULA](https://docs.nvidia.com/cuda/eula/index.html).
