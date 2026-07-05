@@ -231,7 +231,7 @@ def analyze_unit(
                 acc = analyze_accesses(func, k_dims, depths,
                                        grid_dims=grid_dims)
                 fcfg = cfg.get(name)
-                loops = loop_report(func, fcfg, acc["accesses"])
+                loops = loop_report(func, fcfg, acc["accesses"], spec=spec)
                 for row in loops:
                     row["bound"] = classify(row["est_arithmetic_intensity"],
                                             peak_tflops, peak_gbs)

@@ -35,10 +35,13 @@ def test_spills_rank_first_and_high_confidence():
                                        "at": 40, "delta": -8, "blocks_per_sm": 3,
                                        "occupancy_pct": 75.0}]})
     actions = advise(k)
-    assert actions[0]["title"].startswith("eliminate register spills")
-    assert actions[0]["confidence"] == "high"
-    # the register-cut cliff is present but ranks after spills
-    assert any("cut registers" in a["title"] for a in actions)
+    spill = next(a for a in actions if "register spills" in a["title"])
+    assert spill["confidence"] == "high"
+    # within equal severity, impact governs: a 25-point occupancy cliff
+    # outranks 24 bytes of spills — that is the point of impact weighting
+    cut = next(a for a in actions if "cut registers" in a["title"])
+    assert cut["impact"] > spill["impact"]
+    assert actions.index(cut) < actions.index(spill)
 
 
 def test_confidence_degrades_with_coverage():
@@ -83,3 +86,47 @@ def test_high_severity_before_medium():
                    "est_global_bytes_per_warp_iter": 512}])
     sevs = [a["severity"] for a in advise(k)]
     assert sevs == sorted(sevs, key=lambda s: {"high": 0, "medium": 1, "low": 2}[s])
+
+
+class TestCrossover:
+    def test_simt_int_datapath_detected(self):
+        from cuxray.analyze.crossover import datapath
+        assert datapath(["IDP.4A.S8.S8", "LDG.E", "LOP3.LUT"]) == "simt-int"
+        assert datapath(["FFMA", "FMUL", "LDG"]) == "simt-fp"
+        assert datapath(["HMMA.16816.F32", "LDS"]) == "tensor"
+        assert datapath(["LDG", "STG"]) == "none"
+
+    def test_crossover_flags_simt_ceiling(self):
+        from cuxray.analyze.crossover import analyze_loop
+        from cuxray.archspec import lookup
+        # a dp4a loop on A100 should surface the tensor-core ceiling
+        r = analyze_loop(["IDP.4A.S8.S8", "LDG.E.128", "LOP3.LUT"],
+                         lookup("sm_80"), 0.25)
+        assert r and r["datapath"] == "simt-int"
+        assert r["precision"] == "int8"
+        assert r["tensor_speedup_ceiling"] >= 4   # A100 int8 tensor >> dp4a
+
+    def test_tensor_loop_no_crossover(self):
+        from cuxray.analyze.crossover import analyze_loop
+        from cuxray.archspec import lookup
+        assert analyze_loop(["HMMA.16816", "LDSM"], lookup("sm_80"), 8.0) is None
+
+    def test_advise_surfaces_crossover(self):
+        k = _kernel(roofline=[{"loop_depth": 1, "line_span": [1, 9],
+                               "est_arithmetic_intensity": 0.25,
+                               "est_global_bytes_per_warp_iter": 512,
+                               "tensor_crossover": {
+                                   "datapath": "simt-int",
+                                   "tensor_speedup_ceiling": 8.0,
+                                   "note": "MACs on SIMT..."}}])
+        titles = [a["title"] for a in advise(k, arch="sm_80")]
+        assert any("tensor cores scale past it" in t for t in titles)
+
+
+class TestProfileWeighting:
+    def test_weight_scales_impact(self):
+        k = _kernel(spills={"store_instructions": 4, "load_instructions": 2,
+                            "store_bytes": 400, "load_bytes": 200, "by_line": []})
+        full = advise(k, weight=1.0)[0]["impact"]
+        tenth = advise(k, weight=0.1)[0]["impact"]
+        assert abs(tenth - full * 0.1) < 1e-6
