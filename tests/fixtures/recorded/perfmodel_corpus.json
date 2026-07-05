@@ -1,0 +1,30 @@
+{
+  "$comment": "Measured wall-clock corpus for the calibrated-roofline perf model. Full-path W4A8 decode GEMV, batch 1, CUDA-graph timed. bytes = M*K/2 + K + M*(K/128)*2 + M*2. test_perfmodel.py fits (e_sat, t_fixed) per device and asserts the residual stays within the recorded bound. Regenerate: sweep gemv shapes on the device, record measured us.",
+  "devices": [
+    {
+      "name": "A100-SXM4-80GB (sm_80)",
+      "achievable_gbs": 1682,
+      "max_mean_err_pct": 13.0,
+      "max_single_err_pct": 32.0,
+      "samples": [
+        [2048, 2048, 12.2], [4096, 2048, 16.2], [4096, 4096, 15.5],
+        [8192, 4096, 15.9], [11008, 4096, 18.5], [2048, 8192, 14.0],
+        [4096, 8192, 16.0], [4096, 11008, 18.9], [4096, 14336, 24.4],
+        [8192, 14336, 46.0], [16384, 4096, 28.7], [4096, 16384, 27.7],
+        [12288, 6144, 31.3], [6144, 12288, 33.7]
+      ]
+    },
+    {
+      "name": "RTX A5000 (sm_86)",
+      "achievable_gbs": 681,
+      "max_mean_err_pct": 6.0,
+      "max_single_err_pct": 12.0,
+      "samples": [
+        [2048, 2048, 8.6], [4096, 4096, 19.5], [8192, 4096, 30.9],
+        [11008, 4096, 38.5], [4096, 8192, 31.5], [4096, 11008, 39.4],
+        [4096, 14336, 49.3], [8192, 14336, 92.5], [16384, 4096, 54.0],
+        [6144, 12288, 61.5]
+      ]
+    }
+  ]
+}
