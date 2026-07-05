@@ -14,7 +14,19 @@ produces findings + receipts, Kareem writes and defends the change.
 `test-backend-ops perf` at 4 shapes: 0.2-0.8% — within noise. Their mmvq
 already keeps activations L2-resident. Not PR-worthy.
 
-### Finding B — q4_K decode overhead: open, best candidate
+### Finding B — q4_K decode overhead: measured, dropped
+The fused-scale-load fix (one 128-bit load for dm+scales replacing the
+16-bit loads) measured on their harness: 52.75 us at 4096x14336 (-0.7%)
+but +2% at 11008x4096 and 4096x11008. A wash — dropped, patch reverted.
+Verdict after two experiments (this + __ldcs): mmvq is at a robust
+plateau; single-site micro-diffs don't clear a PR bar. The 3.6% q4_K
+gap would need an iteration-mapping restructure (amortize superblock
+scale decode across calls) — high regression risk, poor first-PR fit.
+Next candidate search: systematic cuxray sweep over the other ggml-cuda
+kernels (mul_mat_id/MoE, FA, quantize_q8_1) using the new grid-traffic
+and per-byte sched views.
+
+### (superseded) original q4_K analysis
 llama.cpp's own harness (A5000, m=4096 n=1 k=14336):
 q4_0 = 51.28 us, q4_K = 53.13 us (+3.6%) at identical 4.5 bpw traffic.
 cuxray on the sm_86 `mul_mat_vec_q<type,1,false,false>` instantiations:
@@ -57,7 +69,39 @@ the box clone /root/llama.cpp has the build + bench setup but carries a
 local test-shapes patch in tests/test-backend-ops.cpp — do NOT include
 that in the PR branch.
 
-## Track 2: vLLM batch-1 GPTQ GEMV (full assistance OK)
+## Track 2: vLLM GPTQ GEMV — kernel built and measured (bench/gemv_vllm.cu)
+
+Status 2026-07-05 (A5000, GPTQ uint4b8 sym g=128, CUDA-graph us):
+
+| shape / batch | NC=1 | NC=2 | NC=4 | NC=8 | Marlin bs1 | bs4 | bs8 |
+|---|---|---|---|---|---|---|---|
+| 4096x4096 fp16 | 16.9 | 18.5 | 25.6 | 76 | 21.9-39.9* | 24.9-26.1 | 24.0 |
+| 4096x14336 fp16 | 48.8 | 58.7 | 85.9 | 215 | 54.5-73.5* | 59.5 | 58.1 |
+| 4096x4096 bf16 | 17.5 | — | 35.9 | — | | | |
+
+*Marlin shows 1.5-1.8x run variance on this box (clock lock unsupported);
+ranges span best/worst observed. Crossover: we win batch 1-2 clearly,
+roughly tie at 4, Marlin wins 8+. Dispatch boundary ~4.
+
+Built & validated: GPTQ consumption via one-time host repack (interleaved
+nibble order); fp16 (max_rel 0.018-0.024 vs fp64 GPTQ ref with
+dtype-rounded scales/x) and bf16 (exact 0.0000: fp32 accumulation + bf16
+magic dequant 0x4300/136); arbitrary M (tested 4000); split-K (correct;
++1% at K=14336, slower at 4096^2); per-config rows-per-warp dispatch
+(fp16 NC<=4: 2 rows; NC=8 and bf16 NC>=4: 1 row — register pressure
+measured via cuxray: 96 regs -> 33% occupancy).
+
+Tool-driven fixes: cuxray report diagnosed the NC=4 collapse (registers,
+no spills), and the interleaved-x-tile bank catastrophe (128*NC-byte
+lane strides -> all lanes bank 0) was fixed with per-NC
+alignment-preserving XOR swizzles (53.8 -> 25.6 us at NC=4).
+
+Remaining before PR: dequant+cublas prefill fallback; NC=8 register diet
+(or cede to Marlin at 8); fold output conversion into the epilogue
+(~1.5 us of the NC=1 gap vs campaign v6); multi-arch tune (needs
+4090/A100 rental); vLLM master checkout + MPLinearKernel integration.
+
+### Original integration plan
 
 vLLM's `gptq_marlin` backend calls Marlin unconditionally; batch-1 GPTQ
 decode on Ampere = Marlin, which our v6 beats by 15-24% (see CAMPAIGN.md).
