@@ -4,13 +4,15 @@
 [![CI](https://github.com/KookiesNKareem/cuxray/actions/workflows/ci.yml/badge.svg)](https://github.com/KookiesNKareem/cuxray/actions)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
-Static analysis for CUDA kernel binaries — register pressure, spills,
-occupancy, bank conflicts — **without a GPU**.
+Static analysis and optimization for CUDA kernel binaries — register
+pressure, spills, occupancy, bank conflicts — **without a GPU**.
 
 cuxray reads the decisions the compiler froze into your cubin and combines
-them with NVIDIA's published architecture tables. It never estimates and
-never guesses: every number is ground truth, and anything unknowable is
-reported as unknowable, with the reason.
+them with NVIDIA's published architecture tables. Because those models are
+exact, it can go beyond reporting problems: it searches for fixes (shared-
+memory swizzles, register caps) and verifies them before suggesting them.
+Everything it reports is ground truth; anything unknowable is reported as
+unknowable, with the reason.
 
 ```console
 $ pip install cuxray
@@ -26,25 +28,36 @@ $ cuxray report kernel.cubin --threads 256
       cliff: registers → 128 (-40) gives 2 blocks/SM (33.3%)
 ```
 
-## Highlights
+## Features
 
-- **Spills, located.** Every spill instruction mapped to a source line and
-  weighted by loop depth — not one aggregate number per kernel.
-- **Occupancy with cliffs.** Blocks/SM, the binding limiter(s), and the
-  nearest boundary ("8 fewer registers buys a block").
-- **Bank conflicts & coalescing, statically.** Per-lane address analysis
-  straight from SASS, including XOR-swizzled and `ldmatrix` layouts.
-- **Fixes that are proven, not guessed.** `solve` searches CUTLASS-style
-  swizzles and returns only layouts verified conflict-free for *every*
-  access in the kernel.
-- **Frontier tuning.** `tune-regs` recompiles across `-maxrregcount` values
-  and marks the Pareto-optimal occupancy/spill trade-offs.
-- **CI-native.** `gate` exit codes, per-kernel budget files, build-to-build
-  `diff` with regression detection, SARIF for PR annotations, a reusable
-  GitHub Action, stable JSON everywhere.
-- **Zero setup.** Runs on any Linux machine; pinned NVIDIA binary utilities
-  are fetched (sha256-verified) on first use. Works on binaries you didn't
-  build — a vLLM wheel, a Triton cache, a `.so` from PyPI.
+**Analyze**
+
+- Spill maps: every spill instruction is attributed to a source line and
+  weighted by loop depth, instead of one aggregate byte count per kernel.
+- Occupancy with limiters and cliffs: blocks/SM, which resource binds, and
+  the nearest boundary (e.g. "8 fewer registers gains a block per SM").
+- Bank-conflict and coalescing analysis computed from per-lane address
+  tracking in the SASS, including XOR-swizzled and `ldmatrix` layouts.
+- Register-pressure curves from `nvdisasm` life ranges, mapped to source.
+
+**Optimize**
+
+- `cuxray solve` searches CUTLASS-style swizzles and returns only layouts
+  it has verified conflict-free for every shared access in the kernel.
+- `cuxray tune-regs` recompiles across `-maxrregcount` values and marks the
+  Pareto-optimal occupancy/spill trade-offs.
+- Conflict reports include verified fix suggestions with their shared-memory
+  cost and occupancy impact.
+
+**Integrate**
+
+- CI gating with exit codes, per-kernel budget files, build-to-build `diff`
+  with regression detection, SARIF output for PR annotations, and a
+  reusable GitHub Action.
+- Stable, versioned JSON from every command; results cached on disk.
+- No setup: runs on any Linux machine, fetching pinned, sha256-verified
+  NVIDIA binary utilities on first use. Works on binaries you didn't build
+  — a vLLM wheel, a Triton cache, a `.so` from PyPI.
 
 ## Usage
 
