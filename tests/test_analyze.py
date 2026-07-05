@@ -141,3 +141,16 @@ def test_pareto_marking():
     ]
     mark_pareto(rows)
     assert [r["cap"] for r in rows if r["pareto"]] == [32, 64]
+
+
+def test_matrix_expansion_and_pareto():
+    from cuxray.tunematrix import expand_matrix, mark_pareto
+    combos = expand_matrix({"BM": ["64", "128"], "STAGES": ["2", "3"]})
+    assert len(combos) == 4 and {"BM": "64", "STAGES": "3"} in combos
+    variants = [
+        {"config": {"BM": "64"}, "kernels": [{"occupancy_pct": 50, "spill_bytes": 0, "bank_ways": 1, "uncoalesced": 0}]},
+        {"config": {"BM": "128"}, "kernels": [{"occupancy_pct": 50, "spill_bytes": 400, "bank_ways": 1, "uncoalesced": 0}]},
+        {"config": {"BM": "256"}, "kernels": [{"occupancy_pct": 25, "spill_bytes": 0, "bank_ways": 8, "uncoalesced": 0}]},
+    ]
+    mark_pareto(variants)
+    assert variants[0]["pareto"] and not variants[1]["pareto"] and not variants[2]["pareto"]

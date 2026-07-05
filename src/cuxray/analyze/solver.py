@@ -46,6 +46,33 @@ class Solution:
     def cutlass(self) -> str:
         return f"Swizzle<{self.b},{self.m},{self.s}>"
 
+    @property
+    def cute_type(self) -> str:
+        return f"cute::Swizzle<{self.b},{self.m},{self.s}>"
+
+    def cuda_snippet(self, elem_bytes: int = 4) -> str:
+        mask = ((1 << self.b) - 1) << self.m
+        lines = [
+            "// Verified conflict-free by cuxray solve. Apply to the byte",
+            "// offset within the shared-memory tile (both writes and reads).",
+            "__device__ __forceinline__ unsigned cuxray_swizzle(unsigned byte_off) {",
+            f"    return byte_off ^ ((byte_off >> {self.s}) & {hex(mask)}u);",
+            "}",
+        ]
+        if elem_bytes and (1 << self.m) % elem_bytes == 0 and self.s >= 0:
+            import math
+            eshift = int(math.log2(elem_bytes))
+            emask = mask >> eshift
+            lines += [
+                f"// Element-index form for {elem_bytes}-byte elements:",
+                f"//   idx ^ ((idx >> {self.s}) & {hex(emask)}u)",
+            ]
+        lines += [
+            f"// CUTLASS/cute: use {self.cute_type} in the tile layout.",
+            "// Verify after applying: cuxray report <cubin> --threads <shape>",
+        ]
+        return "\n".join(lines)
+
 
 def apply_swizzle(addr: int, b: int, m: int, s: int) -> int:
     return addr ^ ((addr >> s) & (((1 << b) - 1) << m))

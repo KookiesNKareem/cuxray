@@ -193,3 +193,10 @@ class TestSolver:
         pats = [Pattern(vec=tuple(l * 128 for l in range(32)), width=16)]
         for sol in solve(pats):
             assert sol.m >= 4
+
+    def test_solution_emits_appliable_code(self):
+        from cuxray.analyze.solver import solve
+        best = solve(self._patterns())[0]
+        snip = best.cuda_snippet()
+        assert "__device__" in snip and "byte_off ^" in snip
+        assert best.cute_type.startswith("cute::Swizzle<")

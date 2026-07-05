@@ -28,6 +28,7 @@ class FunctionCFG:
     nodes: set[str] = field(default_factory=set)
     edges: list[tuple[str, str]] = field(default_factory=list)
     loop_depth: dict[str, int] = field(default_factory=dict)
+    loops: dict[str, set[str]] = field(default_factory=dict)  # header -> members
 
 
 def parse(text: str) -> dict[str, FunctionCFG]:
@@ -47,11 +48,11 @@ def parse(text: str) -> dict[str, FunctionCFG]:
             cur.nodes.update((a, b))
             cur.edges.append((a, b))
     for f in funcs.values():
-        f.loop_depth = _loop_depths(f)
+        f.loop_depth, f.loops = _loop_depths(f)
     return funcs
 
 
-def _loop_depths(cfg: FunctionCFG) -> dict[str, int]:
+def _loop_depths(cfg: FunctionCFG) -> tuple[dict[str, int], dict[str, set[str]]]:
     succ: dict[str, list[str]] = {n: [] for n in cfg.nodes}
     pred: dict[str, list[str]] = {n: [] for n in cfg.nodes}
     for a, b in cfg.edges:
@@ -60,7 +61,7 @@ def _loop_depths(cfg: FunctionCFG) -> dict[str, int]:
 
     entry = cfg.name if cfg.name in cfg.nodes else (next(iter(cfg.nodes)) if cfg.nodes else None)
     if entry is None:
-        return {}
+        return {}, {}
 
     # Iterative DFS with an explicit stack-set to find back edges
     back_edges: list[tuple[str, str]] = []
@@ -102,4 +103,4 @@ def _loop_depths(cfg: FunctionCFG) -> dict[str, int]:
     for members in by_header.values():
         for n in members:
             depth[n] += 1
-    return depth
+    return depth, by_header

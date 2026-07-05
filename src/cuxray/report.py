@@ -34,6 +34,7 @@ from typing import Optional
 
 from . import SCHEMA_VERSION, __version__
 from .analyze.access import analyze_accesses
+from .analyze.roofline import classify, loop_report
 from .analyze.liveness import pressure
 from .analyze.spillmap import spill_map
 from .archspec import lookup
@@ -91,6 +92,8 @@ def analyze_unit(
     fast: bool = False,
     smem_dynamic: Optional[int] = None,
     block_dims: Optional[tuple[int, int, int]] = None,
+    peak_tflops: Optional[float] = None,
+    peak_gbs: Optional[float] = None,
 ) -> dict:
     cubin = str(unit.cubin)
     data = unit.cubin.read_bytes()
@@ -171,6 +174,7 @@ def analyze_unit(
             "spills": None,
             "occupancy": None,
             "access": None,
+            "roofline": None,
             "notes": notes,
         }
 
@@ -221,6 +225,12 @@ def analyze_unit(
             if k_dims:
                 depths = cfg.get(name).loop_depth if name in cfg else {}
                 acc = analyze_accesses(func, k_dims, depths)
+                fcfg = cfg.get(name)
+                loops = loop_report(func, fcfg, acc["accesses"])
+                for row in loops:
+                    row["bound"] = classify(row["est_arithmetic_intensity"],
+                                            peak_tflops, peak_gbs)
+                k["roofline"] = loops[:6]
                 k["access"] = {
                     key: acc[key] for key in (
                         "block_dims", "analyzed_count", "unanalyzed_count",
@@ -318,6 +328,8 @@ def build_report(
     fast: bool = False,
     smem_dynamic: Optional[int] = None,
     use_cache: bool = True,
+    peak_tflops: Optional[float] = None,
+    peak_gbs: Optional[float] = None,
 ) -> dict:
     import tempfile
 
@@ -348,6 +360,7 @@ def build_report(
                 threads=total_threads, carveout_kb=carveout_kb,
                 kernel_re=kernel_re, level=level, fast=fast,
                 smem_dynamic=smem_dynamic, block_dims=block_dims,
+                peak_tflops=peak_tflops, peak_gbs=peak_gbs,
             ),
         }
     finally:

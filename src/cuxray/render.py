@@ -142,6 +142,28 @@ def _render_kernel(k: dict, console: Console) -> None:
                 f"    [dim]{acc['unanalyzed_count']} access(es) not analyzable "
                 f"(mostly: {top[0]})[/]"
             )
+    loops = k.get("roofline") or []
+    hot = [r for r in loops if r["loop_depth"] >= 1][:3]
+    for r in hot:
+        span = f"lines {r['line_span'][0]}-{r['line_span'][1]}" if r["line_span"] else r["header"]
+        parts = [f"[bold]loop {span}[/] (depth {r['loop_depth']})"]
+        if r["est_flops_per_warp_iter"]:
+            parts.append(f"{r['est_flops_per_warp_iter']} FLOP/warp-iter")
+        if r["est_global_bytes_per_warp_iter"]:
+            parts.append(f"≥{r['est_global_bytes_per_warp_iter']} B global/iter")
+        if r["est_arithmetic_intensity"] is not None:
+            parts.append(f"AI {r['est_arithmetic_intensity']}")
+        console.print("    [magenta]est.[/] " + " · ".join(parts))
+        details = []
+        if r["est_smem_replay_factor"] and r["est_smem_replay_factor"] > 1.05:
+            details.append(f"smem replay ×{r['est_smem_replay_factor']}")
+        if r["est_traffic_inflation"] and r["est_traffic_inflation"] > 1.05:
+            details.append(f"global traffic ×{r['est_traffic_inflation']} vs coalesced")
+        b = r.get("bound")
+        if b:
+            details.append(f"{b['bound']}-bound (ridge {b['ridge_flop_per_byte']} FLOP/B)")
+        if details:
+            console.print(f"      [magenta]est.[/] {' · '.join(details)}")
     for n in k.get("notes", []):
         console.print(f"    [dim]note: {n}[/]")
 

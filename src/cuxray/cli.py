@@ -103,15 +103,21 @@ def ls(path, kernel_re, as_json, output, no_cache):
               help="dynamic shared memory bytes passed at launch (not recorded "
                    "in the binary; applies to all matched kernels)")
 @click.option("--verbose", is_flag=True, help="show toolchain provenance")
+@click.option("--peak-tflops", type=float, default=None,
+              help="device peak TFLOP/s for roofline bound classification (estimate)")
+@click.option("--peak-gbs", type=float, default=None,
+              help="device peak memory bandwidth GB/s for roofline classification")
 @click.option("--json", "as_json", is_flag=True, help="emit JSON")
 @click.option("--no-cache", is_flag=True, help="bypass the on-disk analysis cache")
 @click.option("--output", "-o", default=None, help="write JSON to a file")
 def report(path, threads, carveout, kernel_re, arch, fast, smem_dynamic,
-           verbose, as_json, output, no_cache):
-    """Full static report: resources, pressure, spills, occupancy, access patterns."""
+           verbose, peak_tflops, peak_gbs, as_json, output, no_cache):
+    """Full static report: resources, pressure, spills, occupancy, access
+    patterns, per-loop roofline estimates."""
     doc = _report_or_die(path, threads=threads, carveout_kb=carveout,
                          kernel_re=kernel_re, arch=arch, fast=fast,
-                         smem_dynamic=smem_dynamic, use_cache=not no_cache)
+                         smem_dynamic=smem_dynamic, use_cache=not no_cache,
+                         peak_tflops=peak_tflops, peak_gbs=peak_gbs)
 
     def human():
         render_report(doc, console)
@@ -234,8 +240,10 @@ def solve(path, threads, kernel_re, arch, as_json, output):
                 "conflicted_sites": len(conflicted),
                 "shared_accesses": len(patterns),
                 "solutions": [{
-                    "cutlass": sol.cutlass, "formula": sol.formula,
+                    "cutlass": sol.cutlass, "cute_type": sol.cute_type,
+                    "formula": sol.formula,
                     "b": sol.b, "m": sol.m, "s": sol.s,
+                    "cuda_snippet": sol.cuda_snippet(),
                     "per_pattern": sol.per_pattern,
                 } for sol in sols],
             })
@@ -266,9 +274,79 @@ def solve(path, threads, kernel_re, arch, as_json, output):
             if len(r["solutions"]) > 1:
                 alts = ", ".join(s2["cutlass"] for s2 in r["solutions"][1:])
                 console.print(f"    [dim]alternatives: {alts}[/]")
+            console.print("")
+            for line in best["cuda_snippet"].split("\n"):
+                console.print(f"    [dim]{line}[/]")
 
     _emit(doc, as_json, output, human)
     sys.exit(0)
+
+
+@main.command()
+@click.argument("src", type=click.Path(exists=True))
+@click.option("--arch", required=True, help="e.g. sm_120a")
+@click.option("--define", "-D", "defines", multiple=True,
+              help="K=v1,v2,... — swept as a Cartesian product")
+@click.option("--flag", "flags", multiple=True, help="extra nvcc flag (repeatable)")
+@click.option("--threads", type=str, default=None, help="block shape for occupancy/access columns")
+@click.option("--smem-dynamic", "smem_dynamic", type=click.IntRange(min=0), default=0)
+@click.option("--json", "as_json", is_flag=True)
+@click.option("--output", "-o", default=None, help="write JSON to a file")
+def tune(src, arch, defines, flags, threads, smem_dynamic, as_json, output):
+    """Compile a CUDA source across a matrix of -D defines and rank the
+    variants statically (regs, spills, occupancy, bank conflicts)."""
+    from .report import parse_block_dims
+    from .tunematrix import sweep_matrix
+
+    dmap = {}
+    for d in defines:
+        if "=" not in d:
+            err.print(f"[red]--define needs K=v1,v2 form:[/] {d}")
+            sys.exit(2)
+        k, vals = d.split("=", 1)
+        dmap[k] = vals.split(",")
+    tc = _toolchain()
+    try:
+        dims, total = parse_block_dims(threads)
+        doc = sweep_matrix(src, tc, arch, dmap, list(flags),
+                           block_dims=dims, threads=total,
+                           smem_dynamic=smem_dynamic)
+    except Exception as e:
+        if _DEBUG:
+            raise
+        err.print(f"[red]error:[/] {e}")
+        sys.exit(2)
+
+    def human():
+        from rich.table import Table
+        t = Table(show_header=True, header_style="bold", box=None, padding=(0, 2))
+        keys = sorted(dmap)
+        for col in (*keys, "regs", "smem", "spill B", "hot spills",
+                    "bank ways", "uncoal", "blocks/SM", "occ %", ""):
+            t.add_column(col, justify="right" if col else "left")
+        for v in doc["variants"]:
+            if "error" in v:
+                t.add_row(*[str(v["config"].get(k, "")) for k in keys],
+                          "[red]compile error[/]", "", "", "", "", "", "", "", "")
+                continue
+            ks = v["kernels"]
+            regs = max((k["regs"] or 0) for k in ks)
+            smem = max(k["smem"] for k in ks)
+            spills = sum(k["spill_bytes"] for k in ks)
+            hot = sum(k["hot_spills"] for k in ks)
+            ways = max((k.get("bank_ways") or 1) for k in ks)
+            unc = sum((k.get("uncoalesced") or 0) for k in ks)
+            blocks = min((k.get("blocks_per_sm", 0) or 0) for k in ks)
+            occ = min((k.get("occupancy_pct", 0) or 0) for k in ks)
+            t.add_row(*[str(v["config"].get(k, "")) for k in keys],
+                      str(regs), str(smem), str(spills), str(hot),
+                      str(ways), str(unc), str(blocks), str(occ),
+                      "[green]● pareto[/]" if v.get("pareto") else "")
+        console.print(t)
+        if doc["failed"]:
+            console.print(f"[yellow]{doc['failed']} variant(s) failed to compile[/]")
+
+    _emit(doc, as_json, output, human)
 
 
 @main.command(name="tune-regs")
