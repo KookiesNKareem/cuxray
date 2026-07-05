@@ -82,10 +82,27 @@ def sector_count(vec: tuple[int, ...], width: int) -> tuple[int, int]:
     return max(counts), min(counts)
 
 
-def _verified_fixes(vec: tuple[int, ...], width: int) -> list[str]:
+def _verified_fixes(vec: tuple[int, ...], width: int) -> list[dict]:
     """Candidate conflict fixes, SIMULATED before being suggested — only
-    fixes that verify clean under the same bank model are returned."""
-    fixes: list[str] = []
+    fixes that verify clean under the same bank model are returned.
+    Zero-shared-memory-cost fixes (swizzles) rank first."""
+    fixes: list[dict] = []
+    # XOR swizzle of the word index: free (no smem growth)
+    for mask in (7, 15, 31):
+        swizzled = tuple(
+            ((((a >> 2) ^ ((a >> 7) & mask)) << 2) | (a & 3)) for a in vec
+        )
+        ways, _ = bank_conflict_ways(swizzled, width)
+        if ways == 1:
+            fixes.append({
+                "kind": "swizzle",
+                "smem_delta_per_row": 0,
+                "description": (
+                    f"XOR-swizzle the word index: idx ^ ((idx >> 5) & {mask}) "
+                    "— verified clean, costs no shared memory"
+                ),
+            })
+            break
     s = _stride(vec)
     if s and s > 0:
         # Padding: classic row-pitch fix. vec = lane * s → lane * (s + pad)
@@ -93,23 +110,17 @@ def _verified_fixes(vec: tuple[int, ...], width: int) -> list[str]:
             padded = tuple((a // s) * (s + pad) + (a % s) for a in vec)
             ways, _ = bank_conflict_ways(padded, width)
             if ways == 1:
-                fixes.append(
-                    f"pad the {s} B row pitch to {s + pad} B — verified clean"
-                )
+                fixes.append({
+                    "kind": "pad",
+                    "stride": s,
+                    "pad_bytes": pad,
+                    "smem_delta_per_row": pad,
+                    "description": (
+                        f"pad the {s} B row pitch to {s + pad} B — verified clean "
+                        f"(costs {pad} B shared memory per row)"
+                    ),
+                })
                 break
-    # XOR swizzle of the word index (works for power-of-two patterns and
-    # doesn't cost shared memory)
-    for mask in (7, 15, 31):
-        swizzled = tuple(
-            ((((a >> 2) ^ ((a >> 7) & mask)) << 2) | (a & 3)) for a in vec
-        )
-        ways, _ = bank_conflict_ways(swizzled, width)
-        if ways == 1:
-            fixes.append(
-                f"XOR-swizzle the word index: idx ^ ((idx >> 5) & {mask}) "
-                "— verified clean, costs no shared memory"
-            )
-            break
     return fixes
 
 
@@ -130,7 +141,10 @@ _SKIP_REASON = {
 
 
 def analyze_accesses(func: Function, block_dims: tuple[int, int, int],
-                     loop_depth: Optional[dict[str, int]] = None) -> dict:
+                     loop_depth: Optional[dict[str, int]] = None,
+                     keep_vecs: bool = False) -> dict:
+    """keep_vecs=True attaches the raw per-lane vector to each access under
+    '_vec' (for the layout solver); excluded from report JSON."""
     loop_depth = loop_depth or {}
     pre, flow = analyze_ex(func, block_dims)
     accesses, unanalyzed = [], []
@@ -148,6 +162,8 @@ def analyze_accesses(func: Function, block_dims: tuple[int, int, int],
                 if mem_text else lv.varying("no address operand"))
 
     def finish_shared(entry, vec):
+        if keep_vecs:
+            entry["_vec"] = vec
         entry["stride"] = _stride(vec)
         ways, bcast = bank_conflict_ways(vec, entry["width"])
         entry["verdict"] = "conflict" if ways > 1 else "clean"
@@ -158,6 +174,8 @@ def analyze_accesses(func: Function, block_dims: tuple[int, int, int],
         accesses.append(entry)
 
     def finish_global(entry, vec):
+        if keep_vecs:
+            entry["_vec"] = vec
         entry["stride"] = _stride(vec)
         worst, best = sector_count(vec, entry["width"])
         ideal = math.ceil(32 * entry["width"] / 32)

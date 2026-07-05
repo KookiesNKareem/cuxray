@@ -38,7 +38,7 @@ from .analyze.liveness import pressure
 from .analyze.spillmap import spill_map
 from .archspec import lookup
 from .ingest import CubinUnit, IngestError, ingest
-from .occupancy import compute, find_cliffs
+from .occupancy import compute, find_cliffs, smem_headroom
 from .parse import cfgdot, elf, resusage, sass
 from .toolchain import Toolchain
 
@@ -242,6 +242,7 @@ def analyze_unit(
             d = occ.to_dict()
             d["cliffs"] = find_cliffs(spec, occ)
             d["register_reallocation"] = realloc
+            d["smem_headroom_bytes"] = smem_headroom(spec, occ)
             k["occupancy"] = d
 
         kernels.append(k)

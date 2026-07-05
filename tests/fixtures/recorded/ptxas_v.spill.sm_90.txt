@@ -4,4 +4,4 @@ ptxas info    : Compiling entry function '_Z6spillyPKfPfii' for 'sm_90'
 ptxas info    : Function properties for _Z6spillyPKfPfii
     240 bytes stack frame, 620 bytes spill stores, 624 bytes spill loads
 ptxas info    : Used 32 registers, used 0 barriers, 240 bytes cumulative stack size
-ptxas info    : Compile time = 94.967 ms
+ptxas info    : Compile time = 56.118 ms

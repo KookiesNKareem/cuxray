@@ -183,6 +183,147 @@ def occupancy(arch, regs, threads, smem, carveout, sweep, as_json, output):
 
 
 @main.command()
+@click.argument("path", type=click.Path(exists=True))
+@click.option("--threads", type=str, required=True,
+              help="block shape: '256' or '32,8[,1]'")
+@click.option("--kernel", "kernel_re", default=None, help="regex filter on kernel names")
+@click.option("--arch", default=None, help="architecture for .ptx input")
+@click.option("--json", "as_json", is_flag=True)
+@click.option("--output", "-o", default=None, help="write JSON to a file")
+def solve(path, threads, kernel_re, arch, as_json, output):
+    """Derive an XOR swizzle making ALL shared accesses conflict-free.
+
+    Searches CUTLASS-style Swizzle<B,M,S> transforms and returns only
+    layouts verified clean for every shared access in each kernel."""
+    from .analyze.access import analyze_accesses
+    from .analyze.solver import patterns_from_accesses, solve as solve_layout
+    from .parse import cfgdot, sass
+    from .report import parse_block_dims
+    from .ingest import ingest
+
+    need_ptxas = str(path).endswith(".ptx")
+    tc = _toolchain(need_ptxas)
+    try:
+        dims, _total = parse_block_dims(threads)
+        units = ingest(Path(path), tc, arch=arch)
+    except Exception as e:
+        err.print(f"[red]error:[/] {e}")
+        sys.exit(2)
+
+    pat = re.compile(kernel_re) if kernel_re else None
+    results = []
+    for unit in units:
+        cubin = str(unit.cubin)
+        dis = sass.parse_gi(tc.run("nvdisasm", ["-c", "-gi", cubin]))
+        try:
+            cfg = cfgdot.parse(tc.run("nvdisasm", ["-cfg", cubin]))
+        except Exception:
+            cfg = {}
+        for name, func in dis.functions.items():
+            if pat and not pat.search(name):
+                continue
+            depths = cfg[name].loop_depth if name in cfg else {}
+            acc = analyze_accesses(func, dims, depths, keep_vecs=True)
+            patterns = patterns_from_accesses(acc["accesses"])
+            conflicted = [p for p in patterns if p.ways_before > 1]
+            if not conflicted:
+                continue
+            sols = solve_layout(patterns)
+            results.append({
+                "unit": unit.label, "kernel": name,
+                "conflicted_sites": len(conflicted),
+                "shared_accesses": len(patterns),
+                "solutions": [{
+                    "cutlass": sol.cutlass, "formula": sol.formula,
+                    "b": sol.b, "m": sol.m, "s": sol.s,
+                    "per_pattern": sol.per_pattern,
+                } for sol in sols],
+            })
+
+    doc = {"schema": "cuxray.solve/1", "results": results}
+
+    def human():
+        if not results:
+            console.print("[green]no conflicted shared accesses found — "
+                          "nothing to solve[/]")
+            return
+        for r in results:
+            console.print(f"\n[bold]{r['kernel'][:100]}[/]  "
+                          f"[dim]({r['unit']})[/]")
+            console.print(f"  {r['conflicted_sites']} conflicted of "
+                          f"{r['shared_accesses']} shared accesses")
+            if not r["solutions"]:
+                console.print("  [yellow]no single swizzle cleans every access "
+                              "— consider restructuring or padding[/]")
+                continue
+            best = r["solutions"][0]
+            console.print(f"  [green]solution:[/] [bold]{best['cutlass']}[/]  "
+                          f"(zero smem cost, verified on all accesses)")
+            console.print(f"    apply to byte offsets: {best['formula']}")
+            worst = max(best["per_pattern"], key=lambda pp: pp["before"])
+            console.print(f"    e.g. {worst['label']}: "
+                          f"{worst['before']}-way → clean")
+            if len(r["solutions"]) > 1:
+                alts = ", ".join(s2["cutlass"] for s2 in r["solutions"][1:])
+                console.print(f"    [dim]alternatives: {alts}[/]")
+
+    _emit(doc, as_json, output, human)
+    sys.exit(0)
+
+
+@main.command(name="tune-regs")
+@click.argument("ptx", type=click.Path(exists=True))
+@click.option("--arch", default=None, help="e.g. sm_120a (default: PTX .target)")
+@click.option("--threads", type=str, default=None,
+              help="block shape for occupancy columns")
+@click.option("--caps", default=None,
+              help="comma-separated maxrregcount ladder (default: 24..255)")
+@click.option("--smem-dynamic", "smem_dynamic", type=click.IntRange(min=0), default=0)
+@click.option("--json", "as_json", is_flag=True)
+@click.option("--output", "-o", default=None, help="write JSON to a file")
+def tune_regs(ptx, arch, threads, caps, smem_dynamic, as_json, output):
+    """Map the -maxrregcount frontier: recompile at a ladder of register caps
+    (no GPU) and report actual regs, spills, and occupancy for each."""
+    from .report import parse_block_dims
+    from .tune import DEFAULT_CAPS, sweep_regcaps
+
+    tc = _toolchain(need_ptxas=True)
+    try:
+        _dims, total = parse_block_dims(threads)
+        cap_list = (tuple(int(c) for c in caps.split(",")) if caps else DEFAULT_CAPS)
+        doc = sweep_regcaps(ptx, tc, arch=arch, caps=cap_list,
+                            threads=total, smem_dynamic=smem_dynamic)
+    except Exception as e:
+        if _DEBUG:
+            raise
+        err.print(f"[red]error:[/] {e}")
+        sys.exit(2)
+
+    def human():
+        from rich.table import Table
+        for k in doc["kernels"]:
+            console.print(f"\n[bold]{k['kernel'][:100]}[/]  [dim]{doc['arch']}[/]")
+            t = Table(show_header=True, header_style="bold", box=None, padding=(0, 2))
+            for col in ("cap", "regs", "spill bytes", "spill instrs", "top spill line",
+                        "blocks/SM", "occupancy", ""):
+                t.add_column(col, justify="right" if col != "" else "left")
+            for r in k["rows"]:
+                occ = f"{r.get('occupancy_pct', '')}%" if r.get("occupancy_pct") is not None else "-"
+                blocks = str(r.get("blocks_per_sm", "-"))
+                mark = "[green]● pareto[/]" if r.get("pareto") else ""
+                spill_col = f"[red]{r['spill_bytes']}[/]" if r["spill_bytes"] else "0"
+                t.add_row(str(r["cap"] or "none"), str(r["regs"]), spill_col,
+                          str(r["spill_instrs"]),
+                          str(r["spill_top_line"] or "-"), blocks, occ, mark)
+            console.print(t)
+        if not threads:
+            console.print("[dim]tip: pass --threads for occupancy columns and "
+                          "Pareto marking[/]")
+
+    _emit(doc, as_json, output, human)
+
+
+@main.command()
 @click.option("--fetch", is_flag=True, help="prefetch the full toolchain (incl. ptxas)")
 def doctor(fetch):
     """Show toolchain resolution, cache state, and environment health."""

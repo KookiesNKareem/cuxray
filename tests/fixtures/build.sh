@@ -29,6 +29,9 @@ for arch in "${ARCHES[@]}"; do
     compile ldsm_async    "$arch"
 done
 
+# PTX fixture for the register-cap tuner
+nvcc -ptx -lineinfo -arch=compute_90 -o "$BIN/spill.compute_90.ptx" "$SRC/spill.cu"
+
 # Multi-arch host object (fatbin embedded in a host ELF) for extraction tests
 nvcc -c -lineinfo \
     -gencode arch=compute_90,code=sm_90 \

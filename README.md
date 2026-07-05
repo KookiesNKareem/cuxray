@@ -148,6 +148,32 @@ GATE FAILED — 1 violation(s)   (exit code 1)
 Metrics: `regs`, `stack`, `smem`, `spill_instrs`, `spill_stores`,
 `spill_loads`, `spill_bytes`, `pressure_peak`, `occupancy(threads=N)`.
 
+### Derive the fix, don't just find it
+
+`cuxray solve` searches XOR swizzles (CUTLASS `Swizzle<B,M,S>` convention)
+and returns only layouts **verified conflict-free for every shared access in
+the kernel jointly** — writes and reads together, which is where padding
+alone often can't win:
+
+```text
+$ cuxray solve kernel.cubin --threads 32
+  ldsm_row_major(...)
+  5 conflicted of 9 shared accesses
+  solution: Swizzle<3,4,3>  (zero smem cost, verified on all accesses)
+    apply to byte offsets: addr ^ ((addr >> 3) & 0x70)
+    e.g. ldsm_async.cu:37 LDSM: 8-way → clean
+```
+
+(That `Swizzle<3,4,3>` is the canonical CUTLASS 128-byte fp16 tile swizzle —
+the solver re-derives it from first principles and proves it against your
+actual access patterns.)
+
+`cuxray tune-regs kernel.ptx --threads 256` maps the `-maxrregcount`
+frontier by recompiling at a ladder of caps (seconds of CPU, no GPU):
+actual registers, spill bytes and locations, occupancy — with
+Pareto-optimal rows marked. On the spill fixture it shows ptxas's uncapped
+default is dominated: cap 48 gives zero spills *and* higher occupancy.
+
 ### Occupancy what-if — no binary needed
 
 ```text

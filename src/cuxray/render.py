@@ -120,9 +120,17 @@ def _render_kernel(k: dict, console: Console) -> None:
             console.print(f"    [red]access issues:[/] {acc['conflicted_shared_accesses']} "
                           f"conflicted shared · {acc['uncoalesced_global_accesses']} uncoalesced global")
             console.print(t)
+            headroom = (k.get("occupancy") or {}).get("smem_headroom_bytes")
             for s in bad[:3]:
                 for fix in s.get("fixes") or []:
-                    console.print(f"      [cyan]fix:[/] {fix}")
+                    desc = fix["description"] if isinstance(fix, dict) else fix
+                    console.print(f"      [cyan]fix:[/] {desc}")
+                    if (isinstance(fix, dict) and fix.get("kind") == "pad"
+                            and headroom is not None):
+                        console.print(
+                            f"        [dim]smem headroom before occupancy drops: "
+                            f"{headroom} B/block[/]"
+                        )
         else:
             console.print(
                 f"    [green]access patterns clean[/] "

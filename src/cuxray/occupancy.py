@@ -231,6 +231,26 @@ def find_cliffs(spec: ArchSpec, base: Occupancy) -> list[dict]:
     return cliffs
 
 
+def smem_headroom(spec: ArchSpec, base: Occupancy) -> Optional[int]:
+    """Largest extra shared-memory bytes per block before blocks/SM drops.
+    None when blocks/SM is 0 or shared memory is already the sole binding
+    constraint with no room."""
+    if base.blocks_per_sm <= 0:
+        return None
+    step = spec.smem_alloc_granularity
+    usage = base.smem_static + base.smem_dynamic
+    extra = 0
+    while extra <= spec.smem_per_block_max - usage:
+        o = compute(spec, base.regs_per_thread, base.threads_per_block,
+                    smem_static=base.smem_static,
+                    smem_dynamic=base.smem_dynamic + extra + step,
+                    carveout_kb=base.carveout_kb)
+        if o.blocks_per_sm < base.blocks_per_sm:
+            return extra
+        extra += step
+    return extra
+
+
 def sweep_block_sizes(
     spec: ArchSpec,
     regs_per_thread: int,

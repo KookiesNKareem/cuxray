@@ -129,3 +129,15 @@ def test_shared_memory_detection():
     for op in ("LDS.64", "STS.128", "LDSM.16.M88.4", "LDGSTS.E.BYPASS.128", "UTMALDG.2D"):
         f = Function(name="k", instructions=[Instruction(addr=0, opcode=op, operands="")])
         assert uses_shared_memory(f), op
+
+
+def test_pareto_marking():
+    from cuxray.tune import mark_pareto
+    rows = [
+        {"cap": 32, "occupancy_pct": 100.0, "spill_bytes": 1104},
+        {"cap": 64, "occupancy_pct": 83.3, "spill_bytes": 0},
+        {"cap": 48, "occupancy_pct": 83.3, "spill_bytes": 500},   # dominated by 64
+        {"cap": 255, "occupancy_pct": 50.0, "spill_bytes": 0},    # dominated by 64
+    ]
+    mark_pareto(rows)
+    assert [r["cap"] for r in rows if r["pareto"]] == [32, 64]

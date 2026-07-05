@@ -152,3 +152,44 @@ class TestMatrixAndAsync:
                      if a["opcode"].startswith("LDGSTS")}
             assert sides.get("global") == "coalesced", name
             assert sides.get("shared") == "clean", name
+
+
+class TestSolver:
+    def _patterns(self, arch="sm_120a"):
+        from cuxray.analyze.solver import patterns_from_accesses
+        dis = sass.parse_gi((REC / f"nvdisasm_gi.bank_conflict.{arch}.txt").read_text())
+        res = analyze_accesses(dis.functions["_Z12col_conflictPKfPfi"], (32, 1, 1),
+                               keep_vecs=True)
+        return patterns_from_accesses(res["accesses"])
+
+    def test_solver_fixes_col_conflict_jointly(self):
+        from cuxray.analyze.solver import solve
+        pats = self._patterns()
+        assert any(p.ways_before == 32 for p in pats)   # column reads
+        assert any(p.ways_before == 1 for p in pats)    # row writes must STAY clean
+        sols = solve(pats)
+        assert sols, "no joint swizzle found for the classic case"
+        best = sols[0]
+        assert all(pp["after"] == 1 for pp in best.per_pattern)
+        assert "Swizzle<" in best.cutlass and "addr ^" in best.formula
+
+    def test_solution_verifies_under_direct_simulation(self):
+        # Re-verify the returned swizzle independently against the bank model
+        from cuxray.analyze.solver import apply_swizzle, solve
+        pats = self._patterns()
+        best = solve(pats)[0]
+        for p in pats:
+            vec = tuple(apply_swizzle(a, best.b, best.m, best.s) for a in p.vec)
+            ways, _ = bank_conflict_ways(vec, p.width)
+            assert ways == 1
+
+    def test_no_patterns_no_solutions(self):
+        from cuxray.analyze.solver import solve
+        assert solve([]) == []
+
+    def test_min_granule_respects_width(self):
+        # 16B accesses must not be swizzled below 16B granularity (m >= 4)
+        from cuxray.analyze.solver import Pattern, solve
+        pats = [Pattern(vec=tuple(l * 128 for l in range(32)), width=16)]
+        for sol in solve(pats):
+            assert sol.m >= 4
