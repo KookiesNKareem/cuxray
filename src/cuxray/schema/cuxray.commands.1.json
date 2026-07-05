@@ -6,23 +6,51 @@
   "$defs": {
     "swizzle": {
       "type": "object",
-      "required": ["cutlass", "formula", "b", "m", "s"],
+      "required": [
+        "cutlass",
+        "formula",
+        "b",
+        "m",
+        "s"
+      ],
       "properties": {
-        "cutlass": { "type": "string", "description": "Swizzle<B,M,S>" },
-        "cute_type": { "type": "string" },
-        "formula": { "type": "string", "description": "addr ^ ((addr >> S) & mask)" },
-        "b": { "type": "integer" },
-        "m": { "type": "integer" },
-        "s": { "type": "integer" },
-        "cuda_snippet": { "type": "string" },
+        "cutlass": {
+          "type": "string",
+          "description": "Swizzle<B,M,S>"
+        },
+        "cute_type": {
+          "type": "string"
+        },
+        "formula": {
+          "type": "string",
+          "description": "addr ^ ((addr >> S) & mask)"
+        },
+        "b": {
+          "type": "integer"
+        },
+        "m": {
+          "type": "integer"
+        },
+        "s": {
+          "type": "integer"
+        },
+        "cuda_snippet": {
+          "type": "string"
+        },
         "per_pattern": {
           "type": "array",
           "items": {
             "type": "object",
             "properties": {
-              "label": { "type": "string" },
-              "before": { "type": "integer" },
-              "after": { "type": "integer" }
+              "label": {
+                "type": "string"
+              },
+              "before": {
+                "type": "integer"
+              },
+              "after": {
+                "type": "integer"
+              }
             }
           }
         }
@@ -30,39 +58,105 @@
     }
   },
   "oneOf": [
-    { "$ref": "#/$defs/advise" },
-    { "$ref": "#/$defs/sched" },
-    { "$ref": "#/$defs/solve" },
-    { "$ref": "#/$defs/why" },
-    { "$ref": "#/$defs/tune" }
+    {
+      "$ref": "#/$defs/advise"
+    },
+    {
+      "$ref": "#/$defs/sched"
+    },
+    {
+      "$ref": "#/$defs/solve"
+    },
+    {
+      "$ref": "#/$defs/why"
+    },
+    {
+      "$ref": "#/$defs/tune"
+    },
+    {
+      "$ref": "#/$defs/survey"
+    },
+    {
+      "$ref": "#/$defs/compare"
+    }
   ],
   "definitions_note": "Each command emits a distinct top-level `schema` value; match on it.",
   "advise": {
     "$anchor": "advise",
     "type": "object",
-    "required": ["schema", "results"],
+    "required": [
+      "schema",
+      "results"
+    ],
     "properties": {
-      "schema": { "const": "cuxray.advise/1" },
+      "schema": {
+        "const": "cuxray.advise/1"
+      },
       "results": {
         "type": "array",
         "items": {
           "type": "object",
-          "required": ["kernel", "actions"],
+          "required": [
+            "kernel",
+            "actions"
+          ],
           "properties": {
-            "unit": { "type": "string" },
-            "kernel": { "type": "string" },
-            "demangled": { "type": ["string", "null"] },
+            "unit": {
+              "type": "string"
+            },
+            "kernel": {
+              "type": "string"
+            },
+            "demangled": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
             "actions": {
               "type": "array",
               "items": {
                 "type": "object",
-                "required": ["severity", "title", "detail", "confidence"],
+                "required": [
+                  "severity",
+                  "title",
+                  "detail",
+                  "confidence"
+                ],
                 "properties": {
-                  "severity": { "enum": ["high", "medium", "low"] },
-                  "confidence": { "enum": ["high", "medium", "low", "unknown"] },
-                  "title": { "type": "string" },
-                  "detail": { "type": "string" },
-                  "evidence": { "type": "array", "items": { "type": "string" } }
+                  "severity": {
+                    "enum": [
+                      "high",
+                      "medium",
+                      "low"
+                    ]
+                  },
+                  "confidence": {
+                    "enum": [
+                      "high",
+                      "medium",
+                      "low",
+                      "unknown"
+                    ]
+                  },
+                  "title": {
+                    "type": "string"
+                  },
+                  "detail": {
+                    "type": "string"
+                  },
+                  "evidence": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "impact": {
+                    "type": "number"
+                  },
+                  "crossover": {
+                    "type": "object"
+                  }
                 }
               }
             }
@@ -74,35 +168,85 @@
   "sched": {
     "$anchor": "sched",
     "type": "object",
-    "required": ["schema", "results"],
+    "required": [
+      "schema",
+      "results"
+    ],
     "properties": {
-      "schema": { "const": "cuxray.sched/1" },
+      "schema": {
+        "const": "cuxray.sched/1"
+      },
       "results": {
         "type": "array",
         "items": {
           "type": "object",
-          "required": ["kernel", "arch", "loops"],
+          "required": [
+            "kernel",
+            "arch",
+            "loops"
+          ],
           "properties": {
-            "unit": { "type": "string" },
-            "kernel": { "type": "string" },
-            "arch": { "type": "string" },
+            "unit": {
+              "type": "string"
+            },
+            "kernel": {
+              "type": "string"
+            },
+            "arch": {
+              "type": "string"
+            },
             "loops": {
               "type": "array",
               "items": {
                 "type": "object",
-                "required": ["header", "instructions", "est_issue_stall_cycles_per_iter"],
+                "required": [
+                  "header",
+                  "instructions",
+                  "est_issue_stall_cycles_per_iter"
+                ],
                 "properties": {
-                  "header": { "type": "string" },
-                  "loop_depth": { "type": "integer" },
-                  "line_span": { "type": ["array", "null"] },
-                  "instructions": { "type": "integer" },
-                  "est_issue_stall_cycles_per_iter": { "type": "integer" },
-                  "scoreboard_waits_per_iter": { "type": "integer" },
-                  "coverage": { "type": "number" },
-                  "est_global_bytes_per_warp_iter": { "type": ["integer", "null"] },
-                  "est_stall_cycles_per_512B": { "type": ["number", "null"] },
-                  "top_stall_lines": { "type": "array" },
-                  "top_stall_opcodes": { "type": "array" }
+                  "header": {
+                    "type": "string"
+                  },
+                  "loop_depth": {
+                    "type": "integer"
+                  },
+                  "line_span": {
+                    "type": [
+                      "array",
+                      "null"
+                    ]
+                  },
+                  "instructions": {
+                    "type": "integer"
+                  },
+                  "est_issue_stall_cycles_per_iter": {
+                    "type": "integer"
+                  },
+                  "scoreboard_waits_per_iter": {
+                    "type": "integer"
+                  },
+                  "coverage": {
+                    "type": "number"
+                  },
+                  "est_global_bytes_per_warp_iter": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "est_stall_cycles_per_512B": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "top_stall_lines": {
+                    "type": "array"
+                  },
+                  "top_stall_opcodes": {
+                    "type": "array"
+                  }
                 }
               }
             }
@@ -114,36 +258,72 @@
   "solve": {
     "$anchor": "solve",
     "type": "object",
-    "required": ["schema", "results"],
+    "required": [
+      "schema",
+      "results"
+    ],
     "properties": {
-      "schema": { "const": "cuxray.solve/1" },
+      "schema": {
+        "const": "cuxray.solve/1"
+      },
       "results": {
         "type": "array",
         "items": {
           "type": "object",
-          "required": ["kernel", "groups"],
+          "required": [
+            "kernel",
+            "groups"
+          ],
           "properties": {
-            "unit": { "type": "string" },
-            "kernel": { "type": "string" },
-            "conflicted_sites": { "type": "integer" },
-            "shared_accesses": { "type": "integer" },
+            "unit": {
+              "type": "string"
+            },
+            "kernel": {
+              "type": "string"
+            },
+            "conflicted_sites": {
+              "type": "integer"
+            },
+            "shared_accesses": {
+              "type": "integer"
+            },
             "global": {
               "type": "array",
-              "items": { "$ref": "#/$defs/swizzle" },
+              "items": {
+                "$ref": "#/$defs/swizzle"
+              },
               "description": "non-empty when one swizzle cleans all accesses"
             },
             "groups": {
               "type": "array",
               "items": {
                 "type": "object",
-                "required": ["sites", "solutions"],
+                "required": [
+                  "sites",
+                  "solutions"
+                ],
                 "properties": {
-                  "sites": { "type": "array", "items": { "type": "string" } },
-                  "solutions": { "type": "array", "items": { "$ref": "#/$defs/swizzle" } }
+                  "sites": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "solutions": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/$defs/swizzle"
+                    }
+                  }
                 }
               }
             },
-            "unsolved_sites": { "type": "array", "items": { "type": "string" } }
+            "unsolved_sites": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
           }
         }
       }
@@ -152,29 +332,68 @@
   "why": {
     "$anchor": "why",
     "type": "object",
-    "required": ["schema", "results"],
+    "required": [
+      "schema",
+      "results"
+    ],
     "properties": {
-      "schema": { "const": "cuxray.why/1" },
+      "schema": {
+        "const": "cuxray.why/1"
+      },
       "results": {
         "type": "array",
         "items": {
           "type": "object",
-          "required": ["kernel", "slices"],
+          "required": [
+            "kernel",
+            "slices"
+          ],
           "properties": {
-            "unit": { "type": "string" },
-            "kernel": { "type": "string" },
+            "unit": {
+              "type": "string"
+            },
+            "kernel": {
+              "type": "string"
+            },
             "slices": {
               "type": "array",
               "items": {
                 "type": "object",
-                "required": ["target", "chain"],
+                "required": [
+                  "target",
+                  "chain"
+                ],
                 "properties": {
-                  "target": { "type": "object" },
-                  "address_value": { "type": ["string", "null"] },
-                  "chain": { "type": "array" },
-                  "first_degradation": { "type": ["integer", "null"] },
-                  "unresolved_inputs": { "type": "array", "items": { "type": "string" } },
-                  "reason": { "type": ["string", "null"] }
+                  "target": {
+                    "type": "object"
+                  },
+                  "address_value": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "chain": {
+                    "type": "array"
+                  },
+                  "first_degradation": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "unresolved_inputs": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "reason": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
                 }
               }
             }
@@ -186,18 +405,131 @@
   "tune": {
     "$anchor": "tune",
     "type": "object",
-    "required": ["schema"],
+    "required": [
+      "schema"
+    ],
     "properties": {
-      "schema": { "enum": ["cuxray.tune/1", "cuxray.tune-regs/1", "cuxray.tunematrix/1"] },
+      "schema": {
+        "enum": [
+          "cuxray.tune/1",
+          "cuxray.tune-regs/1",
+          "cuxray.tunematrix/1"
+        ]
+      },
       "rows": {
         "type": "array",
         "items": {
           "type": "object",
           "properties": {
-            "regs": { "type": ["integer", "null"] },
-            "spill_bytes": { "type": ["integer", "null"] },
-            "occupancy_pct": { "type": ["number", "null"] },
-            "pareto": { "type": "boolean" }
+            "regs": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "spill_bytes": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "occupancy_pct": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "pareto": {
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    }
+  },
+  "survey": {
+    "$anchor": "survey",
+    "type": "object",
+    "required": [
+      "schema",
+      "ranked"
+    ],
+    "properties": {
+      "schema": {
+        "const": "cuxray.survey/1"
+      },
+      "ranked": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "kernel",
+            "total_impact",
+            "top_action"
+          ],
+          "properties": {
+            "unit": {
+              "type": "string"
+            },
+            "kernel": {
+              "type": "string"
+            },
+            "demangled": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "weight": {
+              "type": "number"
+            },
+            "total_impact": {
+              "type": "number"
+            },
+            "n_actions": {
+              "type": "integer"
+            },
+            "top_action": {
+              "type": "string"
+            },
+            "actions": {
+              "type": "array"
+            }
+          }
+        }
+      }
+    }
+  },
+  "compare": {
+    "$anchor": "compare",
+    "type": "object",
+    "required": [
+      "schema",
+      "pairs"
+    ],
+    "properties": {
+      "schema": {
+        "const": "cuxray.compare/1"
+      },
+      "pairs": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "kernel",
+            "old",
+            "new"
+          ],
+          "properties": {
+            "kernel": {
+              "type": "string"
+            },
+            "old": {
+              "type": "object"
+            },
+            "new": {
+              "type": "object"
+            }
           }
         }
       }

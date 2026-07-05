@@ -76,6 +76,37 @@ _add(ArchSpec((12, 0), "Blackwell (RTX 50 / RTX PRO)", 1536, 24, 100 * KB, 99 * 
 _add(ArchSpec((12, 1), "Blackwell (consumer, 12.1)", 1536, 24, 100 * KB, 99 * KB, _CARVEOUTS_100, 1 * KB))
 
 
+# Approximate per-SM, per-clock MAC throughput of the SIMT datapath vs the
+# tensor cores, by precision. These are ORDER-OF-MAGNITUDE figures whose
+# RATIO (tensor / SIMT) is the load-bearing quantity — it sets where a
+# tensor-core implementation overtakes a SIMT one as arithmetic-per-byte
+# (e.g. batch) grows. Absolute values vary by SKU/clock; the ratio is
+# stable within an architecture. "simt.int8" counts dp4a as 4 MACs/instr on
+# the integer pipe; tensor int8 is the IMMA rate. None = no tensor cores /
+# precision unsupported.
+_MAC_RATES: dict[tuple[int, int], dict] = {
+    (7, 5): {"simt": {"fp32": 64, "fp16": 128, "int8": 256},
+             "tensor": {"fp16": 512, "int8": 1024}},
+    (8, 0): {"simt": {"fp32": 64, "fp16": 128, "int8": 256},
+             "tensor": {"fp16": 1024, "int8": 2048}},   # A100
+    (8, 6): {"simt": {"fp32": 128, "fp16": 128, "int8": 256},
+             "tensor": {"fp16": 512, "int8": 1024}},    # GA10x consumer
+    (8, 9): {"simt": {"fp32": 128, "fp16": 128, "int8": 256},
+             "tensor": {"fp16": 512, "int8": 1024}},    # Ada
+    (9, 0): {"simt": {"fp32": 128, "fp16": 256, "int8": 512},
+             "tensor": {"fp16": 2048, "int8": 4096}},   # Hopper
+}
+
+
+def mac_rates(spec: "ArchSpec") -> dict:
+    """Approximate per-SM per-clock MAC rates ({'simt':{...},'tensor':{...}})
+    for the arch, or {} when unmodeled. See _MAC_RATES for the caveats."""
+    r = _MAC_RATES.get(spec.cc)
+    if r is None and spec.cc[0] >= 10:            # Blackwell: reuse Hopper-ish
+        r = _MAC_RATES[(9, 0)]
+    return r or {}
+
+
 _SM_RE = re.compile(r"^(?:sm_?|compute_?)?(\d+)(\d)(a|f)?$")
 
 

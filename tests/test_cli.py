@@ -206,3 +206,34 @@ class TestBlockDimsStrict:
                 "occupancy", "--arch", "sm_90", "--regs", "32",
                 "--threads", bad])
             assert res.exit_code == 2, bad
+
+
+class TestSurveyCompare:
+    def test_survey_json_ranks_by_impact(self, runner, tmp_path):
+        f = tmp_path / "x.cubin"
+        f.write_bytes(b"\x7fELF")
+        res = runner.invoke(cli.main, ["survey", str(f), "--threads", "256", "--json"])
+        assert res.exit_code == 0, res.output
+        doc = json.loads(res.output)
+        assert doc["schema"] == "cuxray.survey/1"
+        imps = [r["total_impact"] for r in doc["ranked"]]
+        assert imps == sorted(imps, reverse=True)   # descending impact
+
+    def test_compare_json_pairs(self, runner, tmp_path):
+        f = tmp_path / "x.cubin"
+        f.write_bytes(b"\x7fELF")
+        res = runner.invoke(cli.main, ["compare", str(f), str(f),
+                                       "--threads", "256", "--json"])
+        assert res.exit_code == 0, res.output
+        doc = json.loads(res.output)
+        assert doc["schema"] == "cuxray.compare/1"
+
+    def test_advise_profile_weights(self, runner, tmp_path):
+        f = tmp_path / "x.cubin"; f.write_bytes(b"\x7fELF")
+        prof = tmp_path / "p.json"; prof.write_text('{".*": 0.5}')
+        res = runner.invoke(cli.main, ["advise", str(f), "--threads", "256",
+                                       "--profile", str(prof), "--json"])
+        assert res.exit_code == 0, res.output
+        doc = json.loads(res.output)
+        for r in doc["results"]:
+            assert r["weight"] == 0.5

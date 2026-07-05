@@ -163,16 +163,20 @@ def report(path, threads, carveout, kernel_re, arch, fast, smem_dynamic,
 @click.option("--arch", default=None, help="architecture for .ptx input")
 @click.option("--peak-tflops", type=float, default=None)
 @click.option("--peak-gbs", type=float, default=None)
+@click.option("--profile", "profile_file", type=click.Path(exists=True), default=None,
+              help="JSON {kernel_regex: runtime_fraction} — weight findings by "
+                   "each kernel's share of end-to-end time (impact ranking)")
 @click.option("--json", "as_json", is_flag=True)
 @click.option("--no-cache", is_flag=True, help="bypass the on-disk analysis cache")
 @click.option("--output", "-o", default=None, help="write JSON to a file")
 def advise(path, threads, grid_str, smem_dynamic, carveout, kernel_re, arch,
-           peak_tflops, peak_gbs, as_json, output, no_cache):
+           peak_tflops, peak_gbs, profile_file, as_json, output, no_cache):
     """Ranked, confidence-tagged design actions synthesized from the full
     analysis (spills, occupancy cliffs, bank/coalescing, grid traffic,
-    per-byte schedule)."""
+    per-byte schedule, tensor-core datapath ceiling)."""
     from .advise import advise as make_actions
 
+    profile = _load_profile(profile_file)
     grid_dims = None
     if grid_str:
         try:
@@ -193,9 +197,11 @@ def advise(path, threads, grid_str, smem_dynamic, carveout, kernel_re, arch,
     results = []
     for unit in doc["units"]:
         for k in unit["kernels"]:
-            actions = make_actions(k, arch=unit.get("arch"))
+            w = _profile_weight(profile, k) if profile else 1.0
+            actions = make_actions(k, arch=unit.get("arch"), weight=w)
             results.append({"unit": unit["label"], "kernel": k["name"],
-                            "demangled": k.get("demangled"), "actions": actions})
+                            "demangled": k.get("demangled"),
+                            "weight": w, "actions": actions})
     out = {"schema": "cuxray.advise/1", "results": results}
 
     _COLOR = {"high": "red", "medium": "yellow", "low": "dim"}
@@ -207,11 +213,14 @@ def advise(path, threads, grid_str, smem_dynamic, carveout, kernel_re, arch,
                 continue
             any_action = True
             name = r.get("demangled") or r["kernel"]
-            console.print(f"\n[bold]{name[:100]}[/]  [dim]({r['unit']})[/]")
+            wtag = (f"  [dim]· {r['weight']:.0%} of runtime[/]"
+                    if profile else "")
+            console.print(f"\n[bold]{name[:100]}[/]  [dim]({r['unit']})[/]{wtag}")
             for i, a in enumerate(r["actions"], 1):
                 sev = _COLOR.get(a["severity"], "white")
+                imp = f" · impact {a['impact']:g}" if a.get("impact") else ""
                 console.print(f"  [{sev}]{i}. {a['title']}[/]  "
-                              f"[dim]· {a['confidence']} confidence[/]")
+                              f"[dim]· {a['confidence']} confidence{imp}[/]")
                 console.print(f"     {a['detail']}")
                 for e in a.get("evidence", []):
                     console.print(f"     [dim]evidence: {e}[/]")
@@ -221,6 +230,176 @@ def advise(path, threads, grid_str, smem_dynamic, carveout, kernel_re, arch,
             if not threads:
                 console.print("[dim]tip: pass --threads for occupancy + access "
                               "actions[/]")
+
+    _emit(out, as_json, output, human)
+    sys.exit(0)
+
+
+def _load_profile(path):
+    """{kernel_regex: runtime_fraction} for --profile weighting, or None."""
+    if not path:
+        return None
+    data = json.loads(Path(path).read_text())
+    return [(re.compile(k), float(v)) for k, v in data.items()]
+
+
+def _profile_weight(profile, kernel: dict) -> float:
+    name = kernel.get("demangled") or kernel.get("name", "")
+    for pat, w in profile:
+        if pat.search(name) or pat.search(kernel.get("name", "")):
+            return w
+    return 0.0  # kernels absent from the profile contribute nothing
+
+
+def _kernel_summary(k: dict) -> dict:
+    """Flat headline metrics for compare/survey."""
+    r = k.get("resources") or {}
+    occ = k.get("occupancy") or {}
+    acc = k.get("access") or {}
+    sp = k.get("spills") or {}
+    hot = next((lp for lp in (k.get("roofline") or [])
+                if lp.get("loop_depth", 0) >= 1), None)
+    return {
+        "regs": r.get("regs"),
+        "occupancy_pct": occ.get("occupancy_pct"),
+        "limiter": occ.get("limiter"),
+        "spill_bytes": (sp.get("store_bytes", 0) or 0) + (sp.get("load_bytes", 0) or 0),
+        "conflicted_shared": acc.get("conflicted_shared_accesses"),
+        "uncoalesced_global": acc.get("uncoalesced_global_accesses"),
+        "hot_loop_ai": hot.get("est_arithmetic_intensity") if hot else None,
+        "hot_loop_bytes_iter": hot.get("est_global_bytes_per_warp_iter") if hot else None,
+        "tensor_crossover": (hot.get("tensor_crossover") or {}).get(
+            "tensor_speedup_ceiling") if hot else None,
+    }
+
+
+@main.command()
+@click.argument("old", type=click.Path(exists=True))
+@click.argument("new", type=click.Path(exists=True))
+@click.option("--threads", type=str, default=None, help="block shape for both")
+@click.option("--kernel", "kernel_re", default=None, help="regex filter")
+@click.option("--arch", default=None)
+@click.option("--json", "as_json", is_flag=True)
+@click.option("--no-cache", is_flag=True)
+@click.option("--output", "-o", default=None)
+def compare(old, new, threads, kernel_re, arch, as_json, output, no_cache):
+    """Side-by-side headline metrics of two cubins (regs, occupancy, spills,
+    conflicts, roofline, tensor-core ceiling) — the "am I actually winning?"
+    view for an optimization."""
+    da = _report_or_die(old, threads=threads, kernel_re=kernel_re, arch=arch,
+                        use_cache=not no_cache)
+    db = _report_or_die(new, threads=threads, kernel_re=kernel_re, arch=arch,
+                        use_cache=not no_cache)
+
+    def flat(doc):
+        return {k["name"]: (_kernel_summary(k), u["label"])
+                for u in doc["units"] for k in u["kernels"]}
+    fa, fb = flat(da), flat(db)
+    names = [n for n in fa if n in fb] or (list(fa)[:1] + list(fb)[:1])
+    pairs = []
+    for n in fa:
+        # pair by exact name, else positionally when each side has one kernel
+        if n in fb:
+            pairs.append((n, fa[n][0], fb[n][0]))
+    if not pairs and len(fa) == 1 and len(fb) == 1:
+        (na, (sa, _)), (nb, (sb, _)) = list(fa.items())[0], list(fb.items())[0]
+        pairs.append((f"{na[:30]} vs {nb[:30]}", sa, sb))
+
+    out = {"schema": "cuxray.compare/1",
+           "pairs": [{"kernel": n, "old": a, "new": b} for n, a, b in pairs]}
+    _METRICS = [("regs", "regs", False), ("occupancy_pct", "occupancy %", True),
+                ("spill_bytes", "spill B", False),
+                ("conflicted_shared", "bank-conflict acc", False),
+                ("uncoalesced_global", "uncoalesced acc", False),
+                ("hot_loop_ai", "hot-loop AI", None),
+                ("hot_loop_bytes_iter", "hot-loop B/iter", False),
+                ("tensor_crossover", "tensor ceiling x", None)]
+
+    def human():
+        if not pairs:
+            console.print("[yellow]no comparable kernels (name mismatch; pass "
+                          "--kernel to align)[/]")
+            return
+        from rich.table import Table
+        for n, a, b in pairs:
+            console.print(f"\n[bold]{n[:90]}[/]")
+            t = Table(box=None, header_style="dim", padding=(0, 2))
+            t.add_column("metric"); t.add_column("old"); t.add_column("new"); t.add_column("Δ")
+            for key, label, higher_better in _METRICS:
+                va, vb = a.get(key), b.get(key)
+                if va is None and vb is None:
+                    continue
+                delta = ""
+                if isinstance(va, (int, float)) and isinstance(vb, (int, float)):
+                    d = vb - va
+                    if d and higher_better is not None:
+                        good = (d > 0) == higher_better
+                        delta = f"[{'green' if good else 'red'}]{d:+g}[/]"
+                    elif d:
+                        delta = f"{d:+g}"
+                t.add_row(label, str(va), str(vb), delta)
+            console.print(t)
+
+    _emit(out, as_json, output, human)
+    sys.exit(0)
+
+
+@main.command()
+@click.argument("path", type=click.Path(exists=True))
+@click.option("--threads", type=str, default=None, help="block shape for occupancy/access")
+@click.option("--arch", default=None)
+@click.option("--profile", "profile_file", type=click.Path(exists=True), default=None,
+              help="JSON {kernel_regex: runtime_fraction} — rank by whole-program impact")
+@click.option("--top", type=int, default=15, help="show the N highest-impact kernels")
+@click.option("--json", "as_json", is_flag=True)
+@click.option("--no-cache", is_flag=True)
+@click.option("--output", "-o", default=None)
+def survey(path, threads, arch, profile_file, top, as_json, output, no_cache):
+    """Sweep every kernel in an artifact and rank them by total recoverable
+    impact — the corpus-scan worklist for finding where a win might live."""
+    from .advise import advise as make_actions
+
+    profile = _load_profile(profile_file)
+    doc = _report_or_die(path, threads=threads, arch=arch, use_cache=not no_cache)
+    rows = []
+    for unit in doc["units"]:
+        for k in unit["kernels"]:
+            w = _profile_weight(profile, k) if profile else 1.0
+            actions = make_actions(k, arch=unit.get("arch"), weight=w)
+            total = round(sum(a.get("impact", 0) for a in actions), 2)
+            if actions:
+                rows.append({
+                    "unit": unit["label"], "kernel": k["name"],
+                    "demangled": k.get("demangled"), "weight": w,
+                    "total_impact": total, "n_actions": len(actions),
+                    "top_action": actions[0]["title"],
+                    "actions": actions,
+                })
+    rows.sort(key=lambda r: -r["total_impact"])
+    out = {"schema": "cuxray.survey/1", "ranked": rows}
+
+    def human():
+        if not rows:
+            console.print("[green]no actionable findings across the artifact[/]")
+            return
+        from rich.table import Table
+        t = Table(box=None, header_style="bold", padding=(0, 2))
+        t.add_column("#"); t.add_column("impact", justify="right")
+        if profile:
+            t.add_column("runtime", justify="right")
+        t.add_column("kernel"); t.add_column("top action")
+        for i, r in enumerate(rows[:top], 1):
+            name = (r.get("demangled") or r["kernel"])
+            name = name[:54] + "…" if len(name) > 55 else name
+            cells = [str(i), f"{r['total_impact']:g}"]
+            if profile:
+                cells.append(f"{r['weight']:.0%}")
+            cells += [name, r["top_action"]]
+            t.add_row(*cells)
+        console.print(t)
+        if len(rows) > top:
+            console.print(f"[dim](+{len(rows) - top} more; --top to show more, "
+                          "`cuxray advise --kernel <name>` to drill in)[/]")
 
     _emit(out, as_json, output, human)
     sys.exit(0)

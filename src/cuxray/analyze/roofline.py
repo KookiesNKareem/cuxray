@@ -52,11 +52,12 @@ def _mma_flops(opcode: str) -> Optional[int]:
 
 
 def loop_report(func: Function, cfg: Optional[FunctionCFG],
-                accesses: Optional[list[dict]] = None) -> list[dict]:
+                accesses: Optional[list[dict]] = None, spec=None) -> list[dict]:
     """Roofline rows for each natural loop, innermost-biased (loops sorted by
     depth descending). `accesses` (from analyze_accesses) supplies sector
     counts for traffic; without it, traffic falls back to access-width bytes
-    (perfect-coalescing assumption, flagged)."""
+    (perfect-coalescing assumption, flagged). `spec` (ArchSpec) enables the
+    SIMT-vs-tensor-core datapath crossover check per loop."""
     if cfg is None or not cfg.loops:
         return []
     by_block: dict[str, list[Instruction]] = {}
@@ -128,6 +129,12 @@ def loop_report(func: Function, cfg: Optional[FunctionCFG],
             "est_block_invariant_bytes_per_warp_iter": invariant_bytes,
             "approximate_traffic": approximate_traffic,
         }
+        if spec is not None:
+            from .crossover import analyze_loop
+            xr = analyze_loop([i.opcode for i in instrs], spec,
+                              row["est_arithmetic_intensity"])
+            if xr:
+                row["tensor_crossover"] = xr
         rows.append(row)
     rows.sort(key=lambda r: (-r["loop_depth"], -r["instructions"]))
     return rows
