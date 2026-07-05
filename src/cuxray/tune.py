@@ -50,8 +50,11 @@ def _analyze_cap(ptx: Path, arch: str, cap: Optional[int], tc: Toolchain,
             "spill_top_line": (sm["by_line"][0]["line"] if sm["by_line"] else None),
         }
         if threads and r and r.reg is not None:
-            occ = compute(lookup(arch), r.reg, threads,
-                          smem_static=max(0, (r.shared or 0) - 1024) if r.shared else 0,
+            spec = lookup(arch)
+            reserved = spec.smem_reserved_per_block
+            occ = compute(spec, r.reg, threads,
+                          smem_static=(max(0, (r.shared or 0) - reserved)
+                                       if r.shared else 0),
                           smem_dynamic=smem_dynamic)
             row["blocks_per_sm"] = occ.blocks_per_sm
             row["occupancy_pct"] = occ.occupancy_pct

@@ -24,6 +24,14 @@ from .occupancy import compute
 from .parse import cfgdot, resusage, sass
 from .toolchain import Toolchain, ToolchainError
 
+def _reserved(arch: str) -> int:
+    from .archspec import lookup
+    try:
+        return lookup(arch).smem_reserved_per_block
+    except KeyError:
+        return 1024
+
+
 
 def find_nvcc() -> str:
     for cand in ("nvcc",):
@@ -75,7 +83,8 @@ def _compile_and_analyze(nvcc: str, src: Path, arch: str, combo: dict,
         row = {
             "kernel": name,
             "regs": r.reg if r else None,
-            "smem": max(0, (r.shared or 0) - 1024) if r and r.shared else 0,
+            "smem": (max(0, (r.shared or 0) - _reserved(arch))
+                     if r and r.shared else 0),
             "spill_bytes": sm["store_bytes"] + sm["load_bytes"],
             "hot_spills": sum(x["stores"] + x["loads"]
                               for x in sm["by_line"] if x["loop_depth"] >= 1),

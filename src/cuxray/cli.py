@@ -152,6 +152,81 @@ def report(path, threads, carveout, kernel_re, arch, fast, smem_dynamic,
 
 
 @main.command()
+@click.argument("path", type=click.Path(exists=True))
+@click.option("--threads", type=str, default=None,
+              help="block shape: '256' or '32,8[,1]'")
+@click.option("--grid", "grid_str", default=None, help="launch grid 'X[,Y[,Z]]'")
+@click.option("--smem-dynamic", "smem_dynamic", type=click.IntRange(min=0), default=None,
+              help="dynamic shared memory bytes at launch")
+@click.option("--carveout", type=int, default=None, help="smem carveout KB")
+@click.option("--kernel", "kernel_re", default=None, help="regex filter on kernel names")
+@click.option("--arch", default=None, help="architecture for .ptx input")
+@click.option("--peak-tflops", type=float, default=None)
+@click.option("--peak-gbs", type=float, default=None)
+@click.option("--json", "as_json", is_flag=True)
+@click.option("--no-cache", is_flag=True, help="bypass the on-disk analysis cache")
+@click.option("--output", "-o", default=None, help="write JSON to a file")
+def advise(path, threads, grid_str, smem_dynamic, carveout, kernel_re, arch,
+           peak_tflops, peak_gbs, as_json, output, no_cache):
+    """Ranked, confidence-tagged design actions synthesized from the full
+    analysis (spills, occupancy cliffs, bank/coalescing, grid traffic,
+    per-byte schedule)."""
+    from .advise import advise as make_actions
+
+    grid_dims = None
+    if grid_str:
+        try:
+            parts = [int(x) for x in grid_str.split(",")]
+            if not (1 <= len(parts) <= 3 and all(x >= 1 for x in parts)):
+                raise ValueError(grid_str)
+        except ValueError:
+            err.print(f"[red]invalid --grid:[/] {grid_str!r} (want X[,Y[,Z]])")
+            sys.exit(2)
+        while len(parts) < 3:
+            parts.append(1)
+        grid_dims = tuple(parts)
+    doc = _report_or_die(path, threads=threads, carveout_kb=carveout,
+                         kernel_re=kernel_re, arch=arch,
+                         smem_dynamic=smem_dynamic, use_cache=not no_cache,
+                         peak_tflops=peak_tflops, peak_gbs=peak_gbs,
+                         grid_dims=grid_dims)
+    results = []
+    for unit in doc["units"]:
+        for k in unit["kernels"]:
+            actions = make_actions(k, arch=unit.get("arch"))
+            results.append({"unit": unit["label"], "kernel": k["name"],
+                            "demangled": k.get("demangled"), "actions": actions})
+    out = {"schema": "cuxray.advise/1", "results": results}
+
+    _COLOR = {"high": "red", "medium": "yellow", "low": "dim"}
+
+    def human():
+        any_action = False
+        for r in results:
+            if not r["actions"]:
+                continue
+            any_action = True
+            name = r.get("demangled") or r["kernel"]
+            console.print(f"\n[bold]{name[:100]}[/]  [dim]({r['unit']})[/]")
+            for i, a in enumerate(r["actions"], 1):
+                sev = _COLOR.get(a["severity"], "white")
+                console.print(f"  [{sev}]{i}. {a['title']}[/]  "
+                              f"[dim]· {a['confidence']} confidence[/]")
+                console.print(f"     {a['detail']}")
+                for e in a.get("evidence", []):
+                    console.print(f"     [dim]evidence: {e}[/]")
+        if not any_action:
+            console.print("[green]no design actions — kernel looks clean "
+                          "at this launch config[/]")
+            if not threads:
+                console.print("[dim]tip: pass --threads for occupancy + access "
+                              "actions[/]")
+
+    _emit(out, as_json, output, human)
+    sys.exit(0)
+
+
+@main.command()
 @click.option("--arch", required=True, help="e.g. sm_120, sm_90")
 @click.option("--regs", type=click.IntRange(min=0), required=True)
 @click.option("--threads", type=str, required=True,
@@ -631,6 +706,9 @@ def schema():
 @click.argument("old", type=click.Path(exists=True))
 @click.argument("new", type=click.Path(exists=True))
 @click.option("--threads", type=str, default=None)
+@click.option("--smem-dynamic", "smem_dynamic", type=click.IntRange(min=0), default=None,
+              help="dynamic shared memory bytes at launch")
+@click.option("--carveout", type=int, default=None, help="smem carveout KB")
 @click.option("--kernel", "kernel_re", default=None)
 @click.option("--fail-on-change", is_flag=True,
               help="exit 1 if any metric changed (or kernels added/removed)")
@@ -639,11 +717,15 @@ def schema():
 @click.option("--json", "as_json", is_flag=True)
 @click.option("--no-cache", is_flag=True, help="bypass the on-disk analysis cache")
 @click.option("--output", "-o", default=None, help="write JSON to a file")
-def diff(old, new, threads, kernel_re, fail_on_change, fail_on_regression,
-         as_json, output, no_cache):
+def diff(old, new, threads, smem_dynamic, carveout, kernel_re, fail_on_change,
+         fail_on_regression, as_json, output, no_cache):
     """Compare two artifacts kernel-by-kernel."""
-    do = _report_or_die(old, threads=threads, kernel_re=kernel_re, use_cache=not no_cache)
-    dn = _report_or_die(new, threads=threads, kernel_re=kernel_re, use_cache=not no_cache)
+    do = _report_or_die(old, threads=threads, kernel_re=kernel_re,
+                        smem_dynamic=smem_dynamic, carveout_kb=carveout,
+                        use_cache=not no_cache)
+    dn = _report_or_die(new, threads=threads, kernel_re=kernel_re,
+                        smem_dynamic=smem_dynamic, carveout_kb=carveout,
+                        use_cache=not no_cache)
     try:
         d = diff_reports(do, dn, kernel_re)
     except ValueError as e:
@@ -668,13 +750,17 @@ def diff(old, new, threads, kernel_re, fail_on_change, fail_on_regression,
 @click.option("--kernel", "kernel_re", default=None)
 @click.option("--threads", type=str, default=None,
               help="block shape, required for bank_ways/uncoalesced metrics")
+@click.option("--smem-dynamic", "smem_dynamic", type=click.IntRange(min=0), default=None,
+              help="dynamic shared memory bytes at launch (occupancy parity with report)")
+@click.option("--carveout", type=int, default=None, help="smem carveout KB")
 @click.option("--json", "as_json", is_flag=True)
 @click.option("--sarif", default=None, help="write SARIF 2.1.0 to a file (GitHub code scanning)")
 @click.option("--source-root", default=None,
               help="strip this prefix from source paths in SARIF for repo-relative URIs")
 @click.option("--no-cache", is_flag=True, help="bypass the on-disk analysis cache")
 @click.option("--output", "-o", default=None, help="write JSON to a file")
-def gate(path, expr, budget_file, kernel_re, threads, as_json, output, sarif, source_root, no_cache):
+def gate(path, expr, budget_file, kernel_re, threads, smem_dynamic, carveout,
+         as_json, output, sarif, source_root, no_cache):
     """CI gate: exit 1 if EXPR is violated
     (e.g. "spill_instrs==0, regs<=168, bank_ways<=2")."""
     if bool(expr) == bool(budget_file):
@@ -691,7 +777,9 @@ def gate(path, expr, budget_file, kernel_re, threads, as_json, output, sarif, so
     except (GateSyntaxError, json.JSONDecodeError) as e:
         err.print(f"[red]gate syntax:[/] {e}")
         sys.exit(2)
-    doc = _report_or_die(path, kernel_re=kernel_re, threads=threads, use_cache=not no_cache)
+    doc = _report_or_die(path, kernel_re=kernel_re, threads=threads,
+                         smem_dynamic=smem_dynamic, carveout_kb=carveout,
+                         use_cache=not no_cache)
     try:
         if budget is not None:
             violations, clauses = eval_budget(doc, budget)

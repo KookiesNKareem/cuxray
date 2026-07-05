@@ -154,11 +154,11 @@ def _render_kernel(k: dict, console: Console) -> None:
     if gt and gt["invariant_bytes_per_warp_iter"]:
         console.print(
             f"    [magenta]est.[/] grid {gt['grid_blocks']} blocks: "
-            f"{gt['invariant_bytes_per_warp_iter']} B/warp-iter block-invariant "
-            f"({gt['invariant_fraction'] * 100:.0f}% of loop traffic) → "
-            f"worst-case (L2-cold) traffic ×{gt['worst_amplification']} — "
-            f"amortize with more rows/block or protect L2 with __ldcs on "
-            f"streaming data"
+            f"[bold]{gt['invariant_fraction'] * 100:.0f}%[/] of loop traffic "
+            f"is block-invariant (re-read by every block). L2 normally "
+            f"absorbs this; if it misses, that portion moves up to "
+            f"{gt['grid_blocks']}× — stage it (more rows/block) or __ldcs the "
+            f"streaming side to keep it out of L2"
         )
     loops = k.get("roofline") or []
     hot = [r for r in loops if r["loop_depth"] >= 1][:3]
@@ -180,6 +180,11 @@ def _render_kernel(k: dict, console: Console) -> None:
         b = r.get("bound")
         if b:
             details.append(f"{b['bound']}-bound (ridge {b['ridge_flop_per_byte']} FLOP/B)")
+        if r.get("approximate_traffic"):
+            details.append("traffic approximate (some accesses untraced)")
+        if r.get("unknown_mma_instructions"):
+            details.append(f"{r['unknown_mma_instructions']} MMA op(s) with "
+                           "unknown shape excluded from FLOPs")
         if details:
             console.print(f"      [magenta]est.[/] {' · '.join(details)}")
     for n in k.get("notes", []):
