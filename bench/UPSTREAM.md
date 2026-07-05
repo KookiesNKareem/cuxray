@@ -69,6 +69,36 @@ the box clone /root/llama.cpp has the build + bench setup but carries a
 local test-shapes patch in tests/test-backend-ops.cpp — do NOT include
 that in the PR branch.
 
+## Track 3 (2026-07-05, A100 session): THE PR TARGET — W4A8 on Ampere
+
+vLLM has NO W4A8 kernel below Hopper: CutlassW4A8LinearKernel and Machete
+both gate on compute capability 90 ("CUTLASS W4A8 requires compute
+capability of 90 (Hopper)"); QQQ was removed. On every A100/A30 and all
+RTX 30/40-series, CompressedTensorsW4A8Int checkpoints have no native
+executor. Meanwhile, measured on A100-SXM4-80GB (achievable 1682 GB/s):
+
+| batch-1 us | 4096^2 | 11008x4096 | 4096x14336 |
+|---|---|---|---|
+| Marlin W4A16 (vLLM 0.24) | 15.6 | 21.8 | 23.2 |
+| our dp4a int8-act kernel (v7k) | 9.5 | 13.0 | 17.9 |
+
+v7k saturates the A100 (99.9% of achievable at 14336) where Marlin sits
+at 61-77%; margins +23-40%. The fp16-activation path is NOT the vehicle
+on A100 — cuxray sched explains why statically: v6 needs 196 stall
+cycles per 512 B streamed = 106% of an SM's issue capacity at A100's
+per-SM bandwidth (impossible -> measured 59% cap), v7 needs 63.7 = 34%
+(fits -> saturates). Same numbers predict the A5000 behavior. Static
+cross-arch saturation prediction — flagship cuxray capability.
+
+Plan: port the dp4a math to CompressedTensorsW4A8Int semantics (s4
+weights -> offset-binary in repack, PER-TOKEN dynamic activation scales
+via vLLM's existing ops.scaled_int8_quant — their infra, their numerics
+contract, so no accuracy-policy objection), integrate as an
+AmpereW4A8LinearKernel in the mixed-precision registry (precedent:
+AllSpark/Conch/Humming are third-party kernels in that exact list),
+dequant+mm prefill fallback, tests, PR. This is a capability-gap PR
+("enables W4A8 on Ampere, saturates HBM"), not a marginal-perf PR.
+
 ## Track 2 verdict (2026-07-05, definitive matrix): current Marlin is
 ## at the ceiling too — vLLM PR premise substantially weakened
 
