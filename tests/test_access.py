@@ -200,3 +200,20 @@ class TestSolver:
         snip = best.cuda_snippet()
         assert "__device__" in snip and "byte_off ^" in snip
         assert best.cute_type.startswith("cute::Swizzle<")
+
+
+class TestBlockInvariance:
+    def test_x_reads_flagged_invariant_weight_reads_not(self):
+        # col_conflict: x[j*N+tx] has no blockIdx term → block-invariant;
+        # strided_global: x[i*32+it] with i = ctaid*bd+tid → block-dependent
+        dis = sass.parse_gi((REC / "nvdisasm_gi.bank_conflict.sm_120a.txt").read_text())
+        res = analyze_accesses(dis.functions["_Z12col_conflictPKfPfi"], (32, 1, 1))
+        inv = [a for a in res["accesses"]
+               if a["space"] == "global" and a.get("block_invariant")]
+        assert inv, "block-invariant x reads not detected"
+        assert res["block_invariant_read_bytes"] > 0
+
+        res2 = analyze_accesses(dis.functions["_Z14strided_globalPKfPfii"], (32, 1, 1))
+        loads = [a for a in res2["accesses"]
+                 if a["space"] == "global" and a["opcode"].startswith("LDG")]
+        assert loads and not any(a.get("block_invariant") for a in loads)

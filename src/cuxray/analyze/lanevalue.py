@@ -33,6 +33,7 @@ class Value:
     kind: str
     vec: Optional[tuple[int, ...]] = None  # per-lane values, len 32
     reason: Optional[str] = None           # why VARYING (attribution only)
+    ctaid: bool = False                     # depends on blockIdx (taint)
 
     def __repr__(self) -> str:
         if self.kind == VARYING:
@@ -55,8 +56,9 @@ class Value:
         return self.kind != VARYING and len(set(self.vec)) == 1
 
 
-def varying(reason: Optional[str] = None) -> Value:
-    return Value(VARYING, reason=reason)
+def varying(reason: Optional[str] = None, ctaid: bool = True) -> Value:
+    # unknown values are conservatively assumed block-dependent
+    return Value(VARYING, reason=reason, ctaid=ctaid)
 
 
 def _first_reason(*vals: Value) -> Optional[str]:
@@ -70,8 +72,8 @@ def const(c: int) -> Value:
     return Value(PURE, tuple([c & _MASK32] * WARP))
 
 
-def uniform_unknown() -> Value:
-    return Value(MIXED, tuple([0] * WARP))
+def uniform_unknown(ctaid: bool = False) -> Value:
+    return Value(MIXED, tuple([0] * WARP), ctaid=ctaid)
 
 
 def pure(vec: Sequence[int]) -> Value:
@@ -98,55 +100,60 @@ def _lift(a: Value, b: Value) -> Optional[str]:
 def add(a: Value, b: Value) -> Value:
     kind = _lift(a, b)
     if kind is None:
-        return varying(_first_reason(a, b))
+        return varying(_first_reason(a, b), a.ctaid or b.ctaid)
     # uniform-unknown parts add to a single uniform-unknown part
-    return Value(kind, tuple((x + y) & _MASK32 for x, y in zip(a.vec, b.vec)))
+    return Value(kind, tuple((x + y) & _MASK32 for x, y in zip(a.vec, b.vec)),
+                 ctaid=a.ctaid or b.ctaid)
 
 
 def sub(a: Value, b: Value) -> Value:
     kind = _lift(a, b)
     if kind is None:
-        return varying(_first_reason(a, b))
+        return varying(_first_reason(a, b), a.ctaid or b.ctaid)
     # (u1+v1)-(u2+v2): uniform parts collapse to one unknown uniform; exact vecs subtract
-    return Value(kind, tuple((x - y) & _MASK32 for x, y in zip(a.vec, b.vec)))
+    return Value(kind, tuple((x - y) & _MASK32 for x, y in zip(a.vec, b.vec)),
+                 ctaid=a.ctaid or b.ctaid)
 
 
 def mul(a: Value, b: Value) -> Value:
+    t = a.ctaid or b.ctaid
     if a.kind == VARYING or b.kind == VARYING:
-        return varying(_first_reason(a, b))
+        return varying(_first_reason(a, b), t)
     if a.kind == PURE and b.kind == PURE:
-        return Value(PURE, tuple((x * y) & _MASK32 for x, y in zip(a.vec, b.vec)))
+        return Value(PURE, tuple((x * y) & _MASK32 for x, y in zip(a.vec, b.vec)), ctaid=t)
     # MIXED * scalar-const is linear: (u + v)*c = u*c + v*c
     for m, s in ((a, b), (b, a)):
         if m.kind == MIXED and s.is_scalar:
             c = s.scalar
-            return Value(MIXED, tuple((x * c) & _MASK32 for x in m.vec))
+            return Value(MIXED, tuple((x * c) & _MASK32 for x in m.vec), ctaid=t)
     # uniform * uniform stays uniform
     if a.is_uniform and b.is_uniform:
-        return uniform_unknown()
-    return varying("nonlinear lane arithmetic")
+        return uniform_unknown(t)
+    return varying("nonlinear lane arithmetic", t)
 
 
 def shl(a: Value, b: Value) -> Value:
+    t = a.ctaid or b.ctaid
     if a.kind == VARYING or b.kind == VARYING:
-        return varying(_first_reason(a, b))
+        return varying(_first_reason(a, b), t)
     if a.kind == PURE and b.kind == PURE:
-        return Value(PURE, tuple((x << (y & 31)) & _MASK32 for x, y in zip(a.vec, b.vec)))
+        return Value(PURE, tuple((x << (y & 31)) & _MASK32 for x, y in zip(a.vec, b.vec)), ctaid=t)
     if a.kind == MIXED and b.is_scalar:  # linear
         c = b.scalar & 31
-        return Value(MIXED, tuple((x << c) & _MASK32 for x in a.vec))
+        return Value(MIXED, tuple((x << c) & _MASK32 for x in a.vec), ctaid=t)
     if a.is_uniform and b.is_uniform:
-        return uniform_unknown()
-    return varying("nonlinear lane arithmetic")
+        return uniform_unknown(t)
+    return varying("nonlinear lane arithmetic", t)
 
 
 def _nonlinear(op):
     def f(a: Value, b: Value) -> Value:
+        t = a.ctaid or b.ctaid
         if a.kind == PURE and b.kind == PURE:
-            return Value(PURE, tuple(op(x, y) & _MASK32 for x, y in zip(a.vec, b.vec)))
+            return Value(PURE, tuple(op(x, y) & _MASK32 for x, y in zip(a.vec, b.vec)), ctaid=t)
         if a.kind != VARYING and b.kind != VARYING and a.is_uniform and b.is_uniform:
-            return uniform_unknown()
-        return varying(_first_reason(a, b) or "nonlinear lane arithmetic")
+            return uniform_unknown(t)
+        return varying(_first_reason(a, b) or "nonlinear lane arithmetic", t)
     return f
 
 
@@ -158,6 +165,7 @@ xor = _nonlinear(lambda x, y: x ^ y)
 
 def lop3(a: Value, b: Value, c: Value, lut: int) -> Value:
     """3-input bitwise LUT (SASS LOP3.LUT) — how swizzle XORs often compile."""
+    t = a.ctaid or b.ctaid or c.ctaid
     if all(v.kind == PURE for v in (a, b, c)):
         out = []
         for x, y, z in zip(a.vec, b.vec, c.vec):
@@ -166,24 +174,27 @@ def lop3(a: Value, b: Value, c: Value, lut: int) -> Value:
                 idx = (((x >> bit) & 1) << 2) | (((y >> bit) & 1) << 1) | ((z >> bit) & 1)
                 r |= ((lut >> idx) & 1) << bit
             out.append(r)
-        return Value(PURE, tuple(out))
+        return Value(PURE, tuple(out), ctaid=t)
     if all(v.kind != VARYING and v.is_uniform for v in (a, b, c)):
-        return uniform_unknown()
-    return varying(_first_reason(a, b, c) or "nonlinear lane arithmetic")
+        return uniform_unknown(t)
+    return varying(_first_reason(a, b, c) or "nonlinear lane arithmetic", t)
 
 
 def join(a: Value, b: Value) -> Value:
     """Control-flow merge. Stable under repetition: a VARYING left operand
     is returned as-is (reason preserved) so fixpoint iteration converges."""
+    t = a.ctaid or b.ctaid
     if a.kind == VARYING:
-        return a
+        return a if a.ctaid == t else Value(VARYING, reason=a.reason, ctaid=t)
     if b.kind == VARYING:
-        return varying(b.reason or "control-flow merge")
+        return varying(b.reason or "control-flow merge", t)
     if a.vec == b.vec:
-        return Value(MIXED, a.vec) if MIXED in (a.kind, b.kind) else a
+        if MIXED in (a.kind, b.kind) or t != a.ctaid:
+            return Value(MIXED if MIXED in (a.kind, b.kind) else a.kind, a.vec, ctaid=t)
+        return a
     # Same lane pattern up to a uniform shift is still MIXED with that pattern
     d0 = (a.vec[0] - b.vec[0]) & _MASK32
     if all(((x - y) & _MASK32) == d0 for x, y in zip(a.vec, b.vec)):
         base = tuple((x - a.vec[0]) & _MASK32 for x in a.vec)
-        return Value(MIXED, base)
-    return varying("control-flow merge")
+        return Value(MIXED, base, ctaid=t)
+    return varying("control-flow merge", t)

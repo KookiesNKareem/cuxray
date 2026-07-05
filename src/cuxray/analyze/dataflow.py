@@ -184,7 +184,9 @@ def step(instr: Instruction, st: State, tids: dict[str, lv.Value]) -> None:
         m = _TID.search(src)
         if m:
             assign(tids[m.group(1).lower()])
-        elif _CTAID.search(src) or "SR_" in src:
+        elif _CTAID.search(src):
+            assign(lv.uniform_unknown(ctaid=True))
+        elif "SR_" in src:
             assign(lv.uniform_unknown())
         else:
             assign(lv.varying())
@@ -313,9 +315,9 @@ def step(instr: Instruction, st: State, tids: dict[str, lv.Value]) -> None:
                 mem = memory_operand(instr)
                 addr = addr_value(mem, st) if mem else lv.varying()
                 if addr.kind != lv.VARYING and addr.is_uniform:
-                    val = lv.uniform_unknown()
+                    val = lv.uniform_unknown(ctaid=addr.ctaid)
                 else:
-                    val = lv.varying("data-dependent (load result)")
+                    val = lv.varying("data-dependent (load result)", addr.ctaid)
             else:
                 val = lv.varying("data-dependent (atomic result)")
             assign(val)

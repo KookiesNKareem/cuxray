@@ -234,7 +234,8 @@ def analyze_unit(
                 k["access"] = {
                     key: acc[key] for key in (
                         "block_dims", "analyzed_count", "unanalyzed_count",
-                        "unanalyzed_by_reason", "worst_bank_conflict_ways",
+                        "unanalyzed_by_reason", "block_invariant_read_bytes",
+                        "worst_bank_conflict_ways",
                         "conflicted_shared_accesses", "uncoalesced_global_accesses",
                     )
                 }

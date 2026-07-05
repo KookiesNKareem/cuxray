@@ -165,9 +165,10 @@ def analyze_accesses(func: Function, block_dims: tuple[int, int, int],
             entry["fixes"] = _verified_fixes(vec, entry["width"])
         accesses.append(entry)
 
-    def finish_global(entry, vec):
+    def finish_global(entry, vec, block_invariant=False):
         if keep_vecs:
             entry["_vec"] = vec
+        entry["block_invariant"] = block_invariant
         entry["stride"] = _stride(vec)
         worst, best = sector_count(vec, entry["width"])
         ideal = math.ceil(32 * entry["width"] / 32)
@@ -209,7 +210,7 @@ def analyze_accesses(func: Function, block_dims: tuple[int, int, int],
             if gval.kind == lv.VARYING:
                 unknown(g_entry, gval)
             else:
-                finish_global(g_entry, gval.vec)
+                finish_global(g_entry, gval.vec, not gval.ctaid)
             s_entry = make_entry(i, "shared")
             sval = eval_addr(i, smem_dst)
             if sval.kind == lv.VARYING:
@@ -235,8 +236,11 @@ def analyze_accesses(func: Function, block_dims: tuple[int, int, int],
         elif space == "shared":
             finish_shared(entry, val.vec)
         else:
-            finish_global(entry, val.vec)
+            finish_global(entry, val.vec, not val.ctaid and base in ("LDG", "LD"))
 
+    block_invariant_bytes = sum(
+        a["sectors_worst"] * 32 for a in accesses
+        if a.get("block_invariant") and a["verdict"] in ("coalesced", "uncoalesced"))
     worst_ways = max((a.get("conflict_ways", 1) for a in accesses), default=1)
     uncoalesced = sum(1 for a in accesses if a.get("verdict") == "uncoalesced")
     conflicted = sum(1 for a in accesses if a.get("verdict") == "conflict")
@@ -279,6 +283,7 @@ def analyze_accesses(func: Function, block_dims: tuple[int, int, int],
         "unanalyzed_by_reason": reasons,
         "analyzed_count": len(accesses),
         "unanalyzed_count": len(unanalyzed),
+        "block_invariant_read_bytes": block_invariant_bytes,
         "worst_bank_conflict_ways": worst_ways,
         "conflicted_shared_accesses": conflicted,
         "uncoalesced_global_accesses": uncoalesced,

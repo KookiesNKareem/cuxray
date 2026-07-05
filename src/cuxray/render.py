@@ -136,6 +136,14 @@ def _render_kernel(k: dict, console: Console) -> None:
                 f"    [green]access patterns clean[/] "
                 f"({acc['analyzed_count']} analyzed)"
             )
+        bib = acc.get("block_invariant_read_bytes") or 0
+        if bib >= 1024:
+            console.print(
+                f"    [magenta]est.[/] {bib} B/block of global reads are "
+                f"block-invariant — every block re-fetches the same data "
+                f"(grid-level traffic = {bib} B × gridDim; amortize with more "
+                f"work per block)"
+            )
         if acc["unanalyzed_count"]:
             top = max(acc["unanalyzed_by_reason"].items(), key=lambda kv: kv[1])
             console.print(
