@@ -69,7 +69,24 @@ the box clone /root/llama.cpp has the build + bench setup but carries a
 local test-shapes patch in tests/test-backend-ops.cpp — do NOT include
 that in the PR branch.
 
-## Track 2: vLLM GPTQ GEMV — kernel built and measured (bench/gemv_vllm.cu)
+## Track 2 verdict (2026-07-05, definitive matrix): current Marlin is
+## at the ceiling too — vLLM PR premise substantially weakened
+
+vLLM 0.19's Marlin (their production linear path, interleaved 7-trial
+medians, IQRs within ~1%) at batch 1: 17.4 / 39.4 / 38.3 / 47.8 us at
+4096^2, 11008x4096, 4096x11008, 4096x14336 — 2-3x faster than the 0.6.1
+build the campaign originally benchmarked, flat across batch 1-8. Ours
+(GPTQ format, folded epilogue): 15.6 / 37.4 / 37.5 / 47.5 at batch 1 =
++10% / +5% / +2% / tie; batch >= 2: Marlin ties or wins everywhere but
+4096^2. A batch-1-only kernel at +0-10% is a weak vLLM PR; park unless
+multi-GPU tuning (4090/A100) widens the margin. What survives: the
+llama.cpp/exllamav2 wins (their stacks can't use Marlin), the native
+4.125 bpw format kernel (15.5 us at 4096^2), the methodology, and the
+tooling story. Recommended vehicle: standalone repo + writeup framed as
+"decode GEMVs at the bandwidth ceiling, and the static tooling that
+built them" — not a SOTA claim.
+
+## Track 2 (historical): vLLM GPTQ GEMV — kernel built and measured (bench/gemv_vllm.cu)
 
 Status 2026-07-05 (A5000, GPTQ uint4b8 sym g=128, CUDA-graph us):
 

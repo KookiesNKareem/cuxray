@@ -54,6 +54,16 @@ dequant+cublas to 0.043); Marlin via vllm 0.6.1 gptq_marlin_gemm
 (uint4b8 sym g=128, dequant-reference max_rel 0.009-0.015; best of runs
 taken for all baselines).
 
+**2026-07-05 CORRECTION — current Marlin.** The Marlin column above is
+vLLM 0.6.1's build. vLLM 0.19's production path (apply_gptq_marlin_linear,
+same GPU, interleaved 7-trial medians, tight IQRs) is far faster at
+batch 1 and flat across batch: 17.4 / 39.4 / 38.3 / 47.8 us at the four
+shapes. Against it, our GPTQ-format kernel (bench/gemv_vllm.cu, folded
+epilogue) measures 15.6 / 37.4 / 37.5 / 47.5 us at batch 1 — +10% / +5% /
++2% / tie — and ties-to-loses at batch >= 2. The llama.cpp and exllamav2
+comparisons are unaffected (their stacks cannot use Marlin). Full matrix
+in UPSTREAM.md.
+
 Tool development driven by this campaign:
 - block-invariant global read detection (blockIdx taint) — automates the
   x re-staging discovery (v1) and drove `__ldcs` on weights (v6).
