@@ -18,7 +18,11 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       - run: pip install -e ".[dev]"
-      - run: pytest -q
+      # -p no:cacheprovider keeps runs hermetic; PYTEST_DISABLE_PLUGIN_AUTOLOAD
+      # guards against unrelated globally-installed pytest plugins
+      - run: PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -q
+      - name: hardware calibration must hold
+        run: PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest -q tests/test_calibration.py
 
   e2e:
     name: e2e (auto-fetched toolchain, CUDA ${{ matrix.redist }})
