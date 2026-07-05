@@ -1,38 +1,24 @@
-"""Static wall-clock estimate for a kernel launch (calibrated roofline).
+"""Roofline floor for a kernel launch.
 
-A binary can't reveal the problem size — traffic and trip counts depend on
-runtime arguments (K, M, ...). So the division of labor is:
+A binary can't reveal the problem size — traffic and MAC counts depend on
+runtime arguments (K, M, ...). So the caller supplies the launch's total
+work (DRAM bytes and, for compute, the MAC count — a one-line formula in the
+problem dims), and cuxray reports the roofline FLOOR: the fastest that work
+can run on this device, and whether it is memory- or compute-bound.
 
-  * the CALLER supplies the launch's total work — DRAM bytes and, for a
-    compute-bound kernel, the MAC count — which for a GEMM/GEMV/attention is
-    a one-line formula in the problem dims;
-  * cuxray supplies the ideal roofline time from that work, and a
-    two-constant calibration captures how this kernel-family realizes it on a
-    given device:
+    t_floor = max(bytes / achievable_bw, macs / datapath_peak)
 
-        t = t_ideal / e_sat + t_fixed
+This is a lower bound with no free parameters — a real kernel runs slower by
+its efficiency. cuxray deliberately does NOT predict that efficiency: it
+would require per-(kernel-family, device) hardware calibration, which
+contradicts the hardware-free premise and is a soft regression next to the
+tool's validated facts. Use the floor to bound what's possible and to see
+which resource binds; use `advise` (datapath crossover) to see whether the
+kernel's math even runs on the datapath that can reach the floor.
 
-    - t_ideal  = max(bytes / achievable_bw, macs / datapath_peak)
-    - e_sat    the saturating efficiency once the launch amortizes overhead.
-      Fitted, not physical: it also absorbs error in the caller's byte/MAC
-      estimate and the peak table, so values slightly above 1.0 occur.
-    - t_fixed  (µs): fixed per-launch cost — launch, any fused pre/post pass,
-      un-amortized latency.
-
-`fit()` recovers (e_sat, t_fixed) by least squares. IMPORTANT: the constants
-are per (kernel-family, device), NOT per device — a GEMV, an FMA loop, and a
-cuBLAS GEMM on the same A100 fit very different constants and do NOT
-cross-apply (cross-family error runs 100-400%). Calibrate a family once,
-then predict other sizes of THAT family on THAT device with no GPU.
-
-Recorded validation is LEAVE-ONE-OUT (held out — see tests/test_perfmodel.py):
-memory-bound W4A8 decode GEMV on A100 + A5000, compute-bound FP32 FMA and
-tensor-core cuBLAS fp16 GEMM on A100. Held-out error ~2-37% by family, worst
-at the smallest overhead-bound sizes. NOT validated: mixed memory+compute
-near the roofline crossover, low-occupancy / latency-bound kernels, atomics,
-divergence, irregular/uncoalesced access, reductions/stencils, attention,
-non-GEMM tensor code, FMA/tensor on non-A100. Relative ordering of
-same-family variants is more robust than the absolute number.
+The peaks come from archspec.mac_rates (validated: A100 FP32 9.74 TMAC/s and
+tensor fp16 156 TMAC/s land on the hardware measurements). achievable_bw
+should be a MEASURED streaming bandwidth, not the spec sheet.
 """
 
 from __future__ import annotations
@@ -57,14 +43,8 @@ class Work:
     datapath: str = "simt-int"     # 'tensor' picks the tensor-core peak
 
 
-@dataclass
-class Calibration:
-    e_sat: float = 0.95            # saturating efficiency (device-transferable)
-    t_fixed_us: float = 0.0        # fixed per-launch cost (device-specific)
-
-
 def ideal_us(work: Work, dev: Device) -> dict:
-    """Device-relative roofline floor, before efficiency/overhead."""
+    """Roofline floor (µs) and the binding resource. A true lower bound."""
     t_mem = work.dram_bytes / (dev.achievable_gbs * 1e9) * 1e6
     t_compute = 0.0
     if work.macs:
@@ -74,33 +54,6 @@ def ideal_us(work: Work, dev: Device) -> dict:
     return {"t_ideal_us": max(t_mem, t_compute),
             "t_mem_ideal_us": t_mem, "t_compute_ideal_us": t_compute,
             "bound": "compute" if t_compute > t_mem else "memory"}
-
-
-def predict(work: Work, dev: Device, calib: Calibration) -> dict:
-    base = ideal_us(work, dev)
-    t = base["t_ideal_us"] / max(0.02, calib.e_sat) + calib.t_fixed_us
-    return {"us": round(t, 3), **{k: round(v, 3) if isinstance(v, float) else v
-                                  for k, v in base.items()}}
-
-
-def fit(samples: list[tuple[float, float]]) -> Calibration:
-    """Least-squares (e_sat, t_fixed) from [(t_ideal_us, measured_us), ...].
-
-    Fits measured = a*t_ideal + b with a = 1/e_sat, b = t_fixed."""
-    n = len(samples)
-    if n < 2:
-        raise ValueError("need >= 2 samples to calibrate")
-    sx = sum(x for x, _ in samples)
-    sy = sum(y for _, y in samples)
-    sxx = sum(x * x for x, _ in samples)
-    sxy = sum(x * y for x, y in samples)
-    denom = n * sxx - sx * sx
-    if denom == 0:
-        raise ValueError("degenerate calibration (all t_ideal equal)")
-    a = (n * sxy - sx * sy) / denom
-    b = (sy - a * sx) / n
-    return Calibration(e_sat=round(1.0 / a, 4) if a > 0 else 0.95,
-                       t_fixed_us=round(b, 3))
 
 
 def _datapath_peak_macs_per_us(dev: Device, precision: str,

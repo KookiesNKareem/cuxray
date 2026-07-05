@@ -283,20 +283,16 @@ def _kernel_summary(k: dict) -> dict:
 @click.option("--clock", type=float, required=True, help="sustained clock GHz")
 @click.option("--cc", default=None, help="compute capability e.g. sm_80 (for the MAC peak)")
 @click.option("--peak-gbs", type=float, required=True, help="measured achievable DRAM GB/s")
-@click.option("--calibrate", type=click.Path(exists=True), default=None,
-              help="OPTIONAL empirical fit: JSON [[ideal_us, measured_us], ...] of "
-                   "the SAME kernel family on THIS device — adds an ESTIMATE line")
 @click.option("--json", "as_json", is_flag=True)
 @click.option("--output", "-o", default=None)
 def roofline(dram_bytes, macs, precision, datapath, sms, clock, cc, peak_gbs,
-             calibrate, as_json, output):
+             as_json, output):
     """Roofline floor for a launch: the fastest this work can run on this
-    device, and whether it is memory- or compute-bound. A FLOOR, not a
-    prediction — a real kernel runs slower by its efficiency. With
-    --calibrate (measurements of the same family on this device) it also
-    prints a fitted wall-clock ESTIMATE, clearly labelled as empirical."""
-    from .analyze.perfmodel import (Calibration, Device, Work, fit, ideal_us,
-                                    predict)
+    device, and whether it is memory- or compute-bound. A true lower bound
+    with no free parameters — a real kernel runs slower by its efficiency,
+    which cuxray does not guess. Pair with `advise` (datapath crossover) to
+    see whether the kernel's math can even reach the floor."""
+    from .analyze.perfmodel import Device, Work, ideal_us
     from .archspec import lookup
 
     dev_cc = None
@@ -314,15 +310,6 @@ def roofline(dram_bytes, macs, precision, datapath, sms, clock, cc, peak_gbs,
            "t_mem_ideal_us": round(base["t_mem_ideal_us"], 3),
            "t_compute_ideal_us": round(base["t_compute_ideal_us"], 3),
            "bound": base["bound"]}
-    estimate = None
-    if calibrate:
-        samples = [(float(a), float(b)) for a, b in
-                   json.loads(Path(calibrate).read_text())]
-        calib = fit(samples)
-        estimate = predict(work, dev, calib)
-        out["estimate_us"] = estimate["us"]
-        out["calibration"] = {"e_sat": calib.e_sat, "t_fixed_us": calib.t_fixed_us,
-                              "n_samples": len(samples)}
 
     def human():
         console.print(f"[bold]roofline floor: {out['t_ideal_us']} µs[/]  "
@@ -331,12 +318,6 @@ def roofline(dram_bytes, macs, precision, datapath, sms, clock, cc, peak_gbs,
                       f"compute {out['t_compute_ideal_us']} µs")
         console.print("[dim]a lower bound — a real kernel runs slower by its "
                       "efficiency[/]")
-        if estimate:
-            console.print(f"\n  [yellow]empirical estimate: ~{estimate['us']} µs[/] "
-                          f"[dim](fitted e_sat={out['calibration']['e_sat']}, "
-                          f"t_fixed={out['calibration']['t_fixed_us']}µs from "
-                          f"{out['calibration']['n_samples']} measurements of this "
-                          "family — NOT a static result; verify on hardware)[/]")
 
     _emit(out, as_json, output, human)
     sys.exit(0)

@@ -1,5 +1,5 @@
 {
-  "$comment": "Measured wall-clock corpus for the calibrated-roofline perf model, spanning kernel TYPES (memory / compute / tensor) and DEVICES (A100, A5000). Each sample {bytes, macs, precision, datapath, us}. test_perfmodel.py builds Work, computes t_ideal (validating peaks), fits (e_sat,t_fixed), asserts residual within bound. Regenerate: scratchpad fma_bench.cu / tc_bench.py / gemv sweep.",
+  "$comment": "Recorded hardware wall-clock corpus (memory/compute/tensor kernels, A100+A5000). Used by test_perfmodel.py only to check the roofline FLOOR is a true lower bound (floor <= measured) and the peaks aren't over-optimistic. cuxray does not predict the efficiency gap above the floor.",
   "cases": [
     {
       "name": "memory-bound W4A8 decode GEMV, A100 (sm_80)",
@@ -79,9 +79,7 @@
           "macs": 0,
           "us": 33.7
         }
-      ],
-      "loo_mean_err_pct": 15.1,
-      "loo_max_err_pct": 40.0
+      ]
     },
     {
       "name": "memory-bound W4A8 decode GEMV, A5000 (sm_86)",
@@ -141,9 +139,7 @@
           "macs": 0,
           "us": 61.5
         }
-      ],
-      "loo_mean_err_pct": 4.9,
-      "loo_max_err_pct": 15.0
+      ]
     },
     {
       "name": "compute-bound FP32 FMA throughput, A100 (sm_80)",
@@ -195,9 +191,7 @@
           "datapath": "simt-fp",
           "us": 46500.2
         }
-      ],
-      "loo_mean_err_pct": 5.7,
-      "loo_max_err_pct": 19.0
+      ]
     },
     {
       "name": "tensor-core fp16 GEMM (cuBLAS), A100 (sm_80)",
@@ -263,9 +257,7 @@
           "datapath": "tensor",
           "us": 1862.0
         }
-      ],
-      "loo_mean_err_pct": 9.4,
-      "loo_max_err_pct": 39.0
+      ]
     }
   ]
 }
