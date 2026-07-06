@@ -114,14 +114,37 @@
           ],
           "properties": {
             "kernel": { "type": "string" },
+            "kind": { "type": ["string", "null"] },
             "shared_bytes": { "type": ["integer", "null"] },
             "threads": { "type": ["integer", "null"] },
             "occupancy_pct": { "type": ["number", "null"] },
             "limiter": { "type": ["string", "null"] },
+            "spills": { "type": "boolean" },
+            "source": {
+              "type": ["object", "null"],
+              "properties": {
+                "file": { "type": ["string", "null"] },
+                "line": { "type": ["integer", "null"] },
+                "code": { "type": ["string", "null"] }
+              }
+            },
             "total_impact": { "type": "number" },
             "n_actions": { "type": "integer" },
             "top_action": { "type": ["string", "null"] },
             "actions": { "type": "array" }
+          }
+        }
+      },
+      "groups": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "kernel": { "type": "string" },
+            "kind": { "type": ["string", "null"] },
+            "variants": { "type": "integer" },
+            "spilling": { "type": "integer" },
+            "best_occupancy_pct": { "type": ["number", "null"] }
           }
         }
       }

@@ -52,7 +52,7 @@ fetches pinned, sha256-verified NVIDIA binary utilities; nothing else to install
 |---|---|
 | `advise` · `survey` | ranked, impact-weighted fixes for one kernel · for a whole library |
 | `report` · `ls` | spills, register-pressure curve, occupancy + cliffs, access patterns · fast listing |
-| `triton` | audit a Triton / `torch.compile` cache: pairs each cubin with its metadata for exact dynamic-smem occupancy, ranks by impact |
+| `triton` | audit a Triton / `torch.compile` cache: metadata-exact dynamic-smem occupancy, source-line attribution, and `--group` to flag spilling autotune candidates before you benchmark them |
 | `solve` | a verified conflict-free swizzle (`Swizzle<B,M,S>` plus ready-to-paste CUDA) |
 | `tune-regs` · `tune` | Pareto occupancy/spill frontier over `-maxrregcount` · over `-D` tile matrices |
 | `sched` | per-loop issue+stall cycle estimate from the compiler's own schedule |

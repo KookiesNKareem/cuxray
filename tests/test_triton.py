@@ -2,7 +2,7 @@
 
 import json
 
-from cuxray.triton import discover
+from cuxray.triton import code_line, discover, kind
 
 
 def _kernel(d, name, meta=None):
@@ -50,3 +50,20 @@ def test_single_cubin_path(tmp_path):
     _kernel(tmp_path, "solo", {"shared": 1024, "num_warps": 2, "warp_size": 32})
     ks = discover(tmp_path / "solo.cubin")
     assert len(ks) == 1 and ks[0].shared == 1024 and ks[0].threads == 64
+
+
+def test_kind_from_name():
+    assert kind("triton_red_fused_native_layer_norm_0") == "reduction"
+    assert kind("triton_poi_fused__to_copy_5") == "pointwise"
+    assert kind("triton_per_fused_x_1") == "persistent-reduction"
+    assert kind("triton_mm") == "matmul"
+    assert kind("not_a_triton_name") is None
+
+
+def test_code_line_reads_debug_info_file(tmp_path):
+    src = tmp_path / "gen.py"
+    src.write_text("line one\n    tmp5 = tl.load(in_ptr0 + x0)\nline three\n")
+    assert code_line(str(src), 2) == "tmp5 = tl.load(in_ptr0 + x0)"
+    assert code_line(str(src), 99) is None          # past EOF
+    assert code_line(str(tmp_path / "gone.py"), 1) is None  # file absent
+    assert code_line(None, 1) is None and code_line(str(src), None) is None

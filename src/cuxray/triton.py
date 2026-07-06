@@ -17,9 +17,16 @@ Layout (Triton cache dir, one hashed subdir per kernel)::
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
+
+# TorchInductor names encode the fusion kind: triton_<kind>_fused_<ops>_<n>.
+# Best-effort cosmetic tag only; unknown prefixes pass through unchanged.
+_KIND = {"poi": "pointwise", "red": "reduction", "per": "persistent-reduction",
+         "tem": "template", "mm": "matmul", "bmm": "batched-matmul",
+         "for": "foreach"}
 
 
 @dataclass
@@ -34,6 +41,34 @@ class TritonKernel:
     @property
     def threads(self) -> Optional[int]:
         return self.num_warps * self.warp_size if self.num_warps else None
+
+
+def kind(name: str) -> Optional[str]:
+    """The TorchInductor fusion kind (pointwise/reduction/...), best-effort
+    from the name. Cosmetic only: an unrecognized prefix returns None."""
+    m = re.match(r"triton_([a-z]+)", name)
+    return _KIND.get(m.group(1)) if m else None
+
+
+def code_line(path: Optional[str], lineno: Optional[int]) -> Optional[str]:
+    """The source line the cubin's own debug info points at, if the file is on
+    disk. This is the standard debugger source-attribution path (the file is
+    named by the cubin's DWARF, extracted by nvdisasm), NOT any Triton or
+    Inductor internal format, so it survives version churn and simply returns
+    None when the file is absent."""
+    if not path or not lineno:
+        return None
+    try:
+        p = Path(path)
+        if not p.is_file():
+            return None
+        with p.open() as f:
+            for i, line in enumerate(f, 1):
+                if i == lineno:
+                    return line.strip() or None
+    except OSError:
+        return None
+    return None
 
 
 def _load_meta(cubin: Path) -> dict:
