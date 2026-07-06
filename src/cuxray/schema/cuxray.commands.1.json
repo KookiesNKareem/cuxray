@@ -78,9 +78,55 @@
     },
     {
       "$ref": "#/$defs/compare"
+    },
+    {
+      "$ref": "#/$defs/triton"
     }
   ],
   "definitions_note": "Each command emits a distinct top-level `schema` value; match on it.",
+  "triton": {
+    "$anchor": "triton",
+    "type": "object",
+    "required": [
+      "schema",
+      "kernels"
+    ],
+    "properties": {
+      "schema": {
+        "const": "cuxray.triton/1"
+      },
+      "summary": {
+        "type": "object",
+        "properties": {
+          "kernels": { "type": "integer" },
+          "with_findings": { "type": "integer" },
+          "smem_from_metadata": { "type": "integer" },
+          "skipped": { "type": "integer" }
+        }
+      },
+      "kernels": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": [
+            "kernel",
+            "total_impact"
+          ],
+          "properties": {
+            "kernel": { "type": "string" },
+            "shared_bytes": { "type": ["integer", "null"] },
+            "threads": { "type": ["integer", "null"] },
+            "occupancy_pct": { "type": ["number", "null"] },
+            "limiter": { "type": ["string", "null"] },
+            "total_impact": { "type": "number" },
+            "n_actions": { "type": "integer" },
+            "top_action": { "type": ["string", "null"] },
+            "actions": { "type": "array" }
+          }
+        }
+      }
+    }
+  },
   "advise": {
     "$anchor": "advise",
     "type": "object",
