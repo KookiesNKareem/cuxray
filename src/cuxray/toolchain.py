@@ -51,6 +51,17 @@ class ToolchainError(RuntimeError):
     pass
 
 
+def _decode_arch_error(stderr: str) -> Optional[str]:
+    """The arch name from an 'nvdisasm fatal: Cannot decode architecture
+    'SM100'' failure, or None if this is a different error. Signals a
+    too-old nvdisasm (the arch postdates that toolkit)."""
+    if "Cannot decode architecture" not in stderr:
+        return None
+    import re
+    m = re.search(r"architecture '([^']+)'", stderr)
+    return m.group(1) if m else "the target architecture"
+
+
 @dataclass
 class Toolchain:
     nvdisasm: Path
@@ -70,8 +81,33 @@ class Toolchain:
             capture_output=True, text=True, cwd=cwd,
         )
         if proc.returncode != 0:
+            stderr = proc.stderr.strip()
+            arch = _decode_arch_error(stderr)
+            if arch is not None:
+                # The resolved nvdisasm predates this GPU. If it is a system
+                # tool (PATH/CUDA_HOME/env), self-heal by falling back to the
+                # pinned toolchain (tracks a recent CUDA) and retry once.
+                if self.origin != "fetched" and not os.environ.get("CUXRAY_NO_FETCH"):
+                    try:
+                        fetched = _fetch(quiet=True, need_ptxas=self.ptxas is not None)
+                    except ToolchainError:
+                        fetched = None
+                    if fetched is not None:
+                        self.nvdisasm = fetched.nvdisasm
+                        self.cuobjdump = fetched.cuobjdump
+                        self.ptxas = fetched.ptxas or self.ptxas
+                        self.origin = "fetched"
+                        self._version_cache = None
+                        return self.run(tool, args, cwd)
+                raise ToolchainError(
+                    f"nvdisasm at {exe} cannot decode {arch} — it predates that "
+                    f"GPU (origin: {self.origin}). cuxray pins CUDA {REDIST_VERSION}, "
+                    "which is newer; unset CUXRAY_TOOLCHAIN/CUDA_HOME and remove any "
+                    "old CUDA from PATH so cuxray uses its pinned toolchain, or set "
+                    f"CUXRAY_REDIST_VERSION to a toolkit that supports {arch}."
+                )
             raise ToolchainError(
-                f"{tool} {' '.join(args)} failed (exit {proc.returncode}):\n{proc.stderr.strip()}"
+                f"{tool} {' '.join(args)} failed (exit {proc.returncode}):\n{stderr}"
             )
         return proc.stdout
 
