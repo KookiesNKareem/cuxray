@@ -9,7 +9,7 @@ Public API:
     analyze_accesses(func, block_dims)   Layer B access analysis
 """
 
-__version__ = "0.3.1"
+__version__ = "0.4.0"
 
 SCHEMA_VERSION = "cuxray.schema/1"
 
