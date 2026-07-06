@@ -91,6 +91,46 @@ class TestToolchain:
         with pytest.raises(toolchain.ToolchainError, match="CUXRAY_TOOLCHAIN"):
             toolchain.resolve(allow_fetch=False)
 
+    def test_decode_arch_error_parses(self):
+        assert toolchain._decode_arch_error(
+            "nvdisasm fatal   : Cannot decode architecture 'SM100'") == "SM100"
+        assert toolchain._decode_arch_error("some other failure") is None
+
+    def _fake_tool(self, d, name, body):
+        p = d / name
+        p.write_text("#!/bin/sh\n" + body)
+        p.chmod(0o755)
+        return p
+
+    def test_arch_decode_falls_back_to_pinned(self, tmp_path, monkeypatch):
+        # a system nvdisasm too old for the GPU: run() should self-heal by
+        # swapping to the pinned toolchain and retrying, transparently.
+        sysd = tmp_path / "sys"; sysd.mkdir()
+        self._fake_tool(sysd, "nvdisasm",
+                        "echo \"nvdisasm fatal : Cannot decode architecture 'SM100'\" >&2\nexit 1\n")
+        self._fake_tool(sysd, "cuobjdump", "echo ok\n")
+        tc = toolchain._from_dir(sysd, "path")
+
+        pind = tmp_path / "pinned"; pind.mkdir()
+        self._fake_tool(pind, "nvdisasm", "echo decoded-on-pinned\n")
+        self._fake_tool(pind, "cuobjdump", "echo ok\n")
+        pinned = toolchain._from_dir(pind, "fetched")
+        monkeypatch.delenv("CUXRAY_NO_FETCH", raising=False)
+        monkeypatch.setattr(toolchain, "_fetch", lambda **kw: pinned)
+
+        out = tc.run("nvdisasm", ["-c", "x.cubin"])
+        assert "decoded-on-pinned" in out
+        assert tc.origin == "fetched"
+
+    def test_arch_decode_on_pinned_raises_actionable(self, tmp_path):
+        d = tmp_path / "fetched"; d.mkdir()
+        self._fake_tool(d, "nvdisasm",
+                        "echo \"nvdisasm fatal : Cannot decode architecture 'SM100'\" >&2\nexit 1\n")
+        self._fake_tool(d, "cuobjdump", "echo ok\n")
+        tc = toolchain._from_dir(d, "fetched")
+        with pytest.raises(toolchain.ToolchainError, match="CUXRAY_REDIST_VERSION"):
+            tc.run("nvdisasm", ["-c", "x.cubin"])
+
     def test_no_toolchain_no_fetch_raises(self, monkeypatch):
         monkeypatch.delenv("CUXRAY_TOOLCHAIN", raising=False)
         monkeypatch.delenv("CUDA_HOME", raising=False)
