@@ -153,7 +153,7 @@ def advise(kernel: dict, arch: Optional[str] = None,
     # as arithmetic-per-byte grows. Surface that before it costs hardware time.
     xr = _crossover(kernel, arch)
     if xr:
-        add("medium", "SIMT datapath caps this loop — tensor cores scale past it",
+        add("medium", "SIMT datapath caps this loop: tensor cores scale past it",
             xr["note"],
             impact=xr["tensor_speedup_ceiling"] * 5, confidence="medium",
             crossover=xr,
