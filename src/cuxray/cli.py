@@ -456,6 +456,95 @@ def survey(path, threads, arch, profile_file, top, as_json, output, no_cache):
 
 
 @main.command()
+@click.argument("path", type=click.Path(exists=True))
+@click.option("--top", type=int, default=20, help="show the N highest-impact kernels")
+@click.option("--all", "show_all", is_flag=True,
+              help="list every kernel, including clean ones")
+@click.option("--json", "as_json", is_flag=True)
+@click.option("--no-cache", is_flag=True)
+@click.option("--output", "-o", default=None)
+def triton(path, top, show_all, as_json, output, no_cache):
+    """Analyze a Triton / TorchInductor kernel cache (a cache dir or a single
+    .cubin). Pairs each compiled cubin with its metadata sidecar so occupancy
+    uses the real dynamic shared-memory size and block shape, then ranks
+    kernels by recoverable impact — a no-GPU audit of what torch.compile ran."""
+    from .triton import discover
+    from .advise import advise as make_actions
+
+    kernels = discover(Path(path))
+    if not kernels:
+        err.print(f"[red]no .cubin found under[/] {path} "
+                  "(expected a Triton cache dir or a .cubin)")
+        sys.exit(2)
+    tc = _toolchain()
+    rows = []
+    skipped = 0
+    with_meta = 0
+    for tk in kernels:
+        threads = str(tk.threads) if tk.threads else None
+        try:
+            doc = build_report(tk.cubin, tc, threads=threads,
+                               smem_dynamic=tk.shared, use_cache=not no_cache)
+        except Exception as e:  # a single bad cubin must not sink the sweep
+            skipped += 1
+            if _DEBUG:
+                err.print(f"[dim]skip {tk.name}: {e}[/]")
+            continue
+        if tk.shared is not None:
+            with_meta += 1
+        for unit in doc["units"]:
+            for k in unit["kernels"]:
+                actions = make_actions(k, arch=unit.get("arch"))
+                occ = k.get("occupancy") or {}
+                rows.append({
+                    "kernel": tk.name,
+                    "shared_bytes": tk.shared,
+                    "threads": tk.threads,
+                    "occupancy_pct": occ.get("occupancy_pct"),
+                    "limiter": occ.get("limiter"),
+                    "total_impact": round(sum(a.get("impact", 0) for a in actions), 2),
+                    "n_actions": len(actions),
+                    "top_action": actions[0]["title"] if actions else None,
+                    "actions": actions,
+                })
+    rows.sort(key=lambda r: -r["total_impact"])
+    flagged = [r for r in rows if r["n_actions"]]
+    out = {"schema": "cuxray.triton/1", "kernels": rows,
+           "summary": {"kernels": len(rows), "with_findings": len(flagged),
+                       "smem_from_metadata": with_meta, "skipped": skipped}}
+
+    def human():
+        from rich.table import Table
+        shown = rows if show_all else flagged
+        if not shown:
+            console.print(f"[green]{len(rows)} Triton kernels, all clean "
+                          "at their real launch config[/]")
+        else:
+            t = Table(box=None, header_style="bold", padding=(0, 2))
+            t.add_column("#"); t.add_column("impact", justify="right")
+            t.add_column("occ%", justify="right"); t.add_column("smem", justify="right")
+            t.add_column("kernel"); t.add_column("top action")
+            for i, r in enumerate(shown[:top], 1):
+                name = r["kernel"]
+                name = name[:48] + "…" if len(name) > 49 else name
+                occ = f"{r['occupancy_pct']:g}" if r["occupancy_pct"] is not None else "-"
+                sm = f"{r['shared_bytes']}B" if r["shared_bytes"] is not None else "?"
+                t.add_row(str(i), f"{r['total_impact']:g}", occ, sm, name,
+                          r["top_action"] or "[dim]clean[/]")
+            console.print(t)
+            if not show_all and len(shown) > top:
+                console.print(f"[dim](+{len(shown) - top} more with findings; "
+                              "--top to show more)[/]")
+        console.print(
+            f"[dim]{len(rows)} kernels · {len(flagged)} with findings · "
+            f"shared memory from Triton metadata for {with_meta}"
+            + (f" · {skipped} unreadable" if skipped else "") + "[/]")
+
+    _emit(out, as_json, output, human)
+    sys.exit(0)
+
+
+@main.command()
 @click.option("--arch", required=True, help="e.g. sm_120, sm_90")
 @click.option("--regs", type=click.IntRange(min=0), required=True)
 @click.option("--threads", type=str, required=True,
