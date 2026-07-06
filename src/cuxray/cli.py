@@ -460,18 +460,25 @@ def survey(path, threads, arch, profile_file, top, as_json, output, no_cache):
 @click.option("--top", type=int, default=20, help="show the N highest-impact kernels")
 @click.option("--all", "show_all", is_flag=True,
               help="list every kernel, including clean ones")
+@click.option("--group", "group", is_flag=True,
+              help="group compiled variants by fusion (autotune-candidate view)")
 @click.option("--json", "as_json", is_flag=True)
 @click.option("--no-cache", is_flag=True)
 @click.option("--output", "-o", default=None)
-def triton(path, top, show_all, as_json, output, no_cache):
+def triton(path, top, show_all, group, as_json, output, no_cache):
     """Analyze a Triton / TorchInductor kernel cache (a cache dir or a single
     .cubin). Pairs each compiled cubin with its metadata sidecar so occupancy
     uses the real dynamic shared-memory size and block shape, then ranks
-    kernels by recoverable impact — a no-GPU audit of what torch.compile ran."""
-    from .triton import discover
+    kernels by recoverable impact — a no-GPU audit of what torch.compile ran.
+
+    With --group, aggregates compiled variants by fusion: a static prefilter
+    for autotuning that shows how many candidates spill before you benchmark
+    them on the GPU. Reads only the compiled cubins and their metadata sidecar,
+    so it stays robust across Triton/Inductor versions."""
+    from . import triton as _tri
     from .advise import advise as make_actions
 
-    kernels = discover(Path(path))
+    kernels = _tri.discover(Path(path))
     if not kernels:
         err.print(f"[red]no .cubin found under[/] {path} "
                   "(expected a Triton cache dir or a .cubin)")
@@ -496,12 +503,23 @@ def triton(path, top, show_all, as_json, output, no_cache):
             for k in unit["kernels"]:
                 actions = make_actions(k, arch=unit.get("arch"))
                 occ = k.get("occupancy") or {}
+                sp = k.get("spills") or {}
+                spills = bool(sp.get("store_instructions") or sp.get("load_instructions"))
+                by = sp.get("by_line") or []
+                source = None
+                if by:
+                    b0 = by[0]
+                    source = {"file": b0.get("file"), "line": b0.get("line"),
+                              "code": _tri.code_line(b0.get("file"), b0.get("line"))}
                 rows.append({
                     "kernel": tk.name,
+                    "kind": _tri.kind(tk.name),
                     "shared_bytes": tk.shared,
                     "threads": tk.threads,
                     "occupancy_pct": occ.get("occupancy_pct"),
                     "limiter": occ.get("limiter"),
+                    "spills": spills,
+                    "source": source,
                     "total_impact": round(sum(a.get("impact", 0) for a in actions), 2),
                     "n_actions": len(actions),
                     "top_action": actions[0]["title"] if actions else None,
@@ -509,12 +527,45 @@ def triton(path, top, show_all, as_json, output, no_cache):
                 })
     rows.sort(key=lambda r: -r["total_impact"])
     flagged = [r for r in rows if r["n_actions"]]
-    out = {"schema": "cuxray.triton/1", "kernels": rows,
+
+    groups = {}
+    for r in rows:
+        g = groups.setdefault(r["kernel"], {
+            "kernel": r["kernel"], "kind": r["kind"], "variants": 0,
+            "spilling": 0, "best_occupancy_pct": None})
+        g["variants"] += 1
+        if r["spills"]:
+            g["spilling"] += 1
+        if r["occupancy_pct"] is not None:
+            g["best_occupancy_pct"] = max(g["best_occupancy_pct"] or 0, r["occupancy_pct"])
+    grouped = sorted(groups.values(), key=lambda g: (-g["spilling"], -g["variants"]))
+
+    out = {"schema": "cuxray.triton/1", "kernels": rows, "groups": grouped,
            "summary": {"kernels": len(rows), "with_findings": len(flagged),
+                       "fusions": len(groups),
+                       "spilling_variants": sum(1 for r in rows if r["spills"]),
                        "smem_from_metadata": with_meta, "skipped": skipped}}
 
     def human():
         from rich.table import Table
+        if group:
+            multi = [g for g in grouped if g["variants"] > 1 or g["spilling"]]
+            if not any(g["spilling"] for g in grouped):
+                console.print("[green]no spilling candidates across any fusion[/]")
+            t = Table(box=None, header_style="bold", padding=(0, 2))
+            t.add_column("fusion"); t.add_column("variants", justify="right")
+            t.add_column("spill", justify="right"); t.add_column("best occ%", justify="right")
+            for g in (multi or grouped)[:top]:
+                nm = g["kernel"]; nm = nm[:52] + "…" if len(nm) > 53 else nm
+                spill = f"[red]{g['spilling']}[/]" if g["spilling"] else "0"
+                occ = f"{g['best_occupancy_pct']:g}" if g["best_occupancy_pct"] is not None else "-"
+                t.add_row(nm, str(g["variants"]), spill, occ)
+            console.print(t)
+            nspill = sum(1 for r in rows if r["spills"])
+            console.print(f"[dim]{len(groups)} fusions · {len(rows)} compiled variants · "
+                          f"{nspill} spill (skippable before benchmarking)[/]")
+            return
+
         shown = rows if show_all else flagged
         if not shown:
             console.print(f"[green]{len(rows)} Triton kernels, all clean "
@@ -523,15 +574,22 @@ def triton(path, top, show_all, as_json, output, no_cache):
             t = Table(box=None, header_style="bold", padding=(0, 2))
             t.add_column("#"); t.add_column("impact", justify="right")
             t.add_column("occ%", justify="right"); t.add_column("smem", justify="right")
-            t.add_column("kernel"); t.add_column("top action")
+            t.add_column("kind"); t.add_column("kernel"); t.add_column("top action")
             for i, r in enumerate(shown[:top], 1):
                 name = r["kernel"]
-                name = name[:48] + "…" if len(name) > 49 else name
+                name = name[:44] + "…" if len(name) > 45 else name
                 occ = f"{r['occupancy_pct']:g}" if r["occupancy_pct"] is not None else "-"
                 sm = f"{r['shared_bytes']}B" if r["shared_bytes"] is not None else "?"
-                t.add_row(str(i), f"{r['total_impact']:g}", occ, sm, name,
-                          r["top_action"] or "[dim]clean[/]")
+                t.add_row(str(i), f"{r['total_impact']:g}", occ, sm,
+                          r["kind"] or "-", name, r["top_action"] or "[dim]clean[/]")
             console.print(t)
+            srcs = [r for r in shown[:top] if (r.get("source") or {}).get("code")]
+            if srcs:
+                console.print("[dim]source (from the cubin's debug info):[/]")
+                for r in srcs:
+                    s = r["source"]
+                    fn = Path(s["file"]).name
+                    console.print(f"  [dim]{r['kernel'][:40]}  {fn}:{s['line']}:[/]  {s['code']}")
             if not show_all and len(shown) > top:
                 console.print(f"[dim](+{len(shown) - top} more with findings; "
                               "--top to show more)[/]")
