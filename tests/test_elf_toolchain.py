@@ -1,13 +1,10 @@
-"""elf.py and toolchain.py unit tests — pure Python, committed fixtures only."""
-
-import os
 import sys
 from pathlib import Path
 
 import pytest
 
+from cuxray import report, toolchain
 from cuxray.parse import elf
-from cuxray import toolchain
 
 BIN = Path(__file__).parent / "fixtures" / "bin"
 
@@ -96,6 +93,25 @@ class TestToolchain:
             "nvdisasm fatal   : Cannot decode architecture 'SM100'") == "SM100"
         assert toolchain._decode_arch_error("some other failure") is None
 
+    @pytest.mark.parametrize(
+        ("message", "flavor"),
+        [
+            (
+                "nvdisasm warning : switching to Old format\n"
+                "nvdisasm error : Cannot print life ranges as flow analysis is disabled",
+                "old",
+            ),
+            (
+                "nvdisasm warning : switching to Std format\n"
+                "nvdisasm error : Cannot print control flow graph as flow analysis is disabled",
+                "std",
+            ),
+            ("nvdisasm error : unrelated failure", None),
+        ],
+    )
+    def test_elf_flavor_conflict_parses(self, message, flavor):
+        assert toolchain._elf_flavor_conflict(message) == flavor
+
     def _fake_tool(self, d, name, body):
         p = d / name
         p.write_text("#!/bin/sh\n" + body)
@@ -105,13 +121,15 @@ class TestToolchain:
     def test_arch_decode_falls_back_to_pinned(self, tmp_path, monkeypatch):
         # a system nvdisasm too old for the GPU: run() should self-heal by
         # swapping to the pinned toolchain and retrying, transparently.
-        sysd = tmp_path / "sys"; sysd.mkdir()
+        sysd = tmp_path / "sys"
+        sysd.mkdir()
         self._fake_tool(sysd, "nvdisasm",
                         "echo \"nvdisasm fatal : Cannot decode architecture 'SM100'\" >&2\nexit 1\n")
         self._fake_tool(sysd, "cuobjdump", "echo ok\n")
         tc = toolchain._from_dir(sysd, "path")
 
-        pind = tmp_path / "pinned"; pind.mkdir()
+        pind = tmp_path / "pinned"
+        pind.mkdir()
         self._fake_tool(pind, "nvdisasm", "echo decoded-on-pinned\n")
         self._fake_tool(pind, "cuobjdump", "echo ok\n")
         pinned = toolchain._from_dir(pind, "fetched")
@@ -123,13 +141,106 @@ class TestToolchain:
         assert tc.origin == "fetched"
 
     def test_arch_decode_on_pinned_raises_actionable(self, tmp_path):
-        d = tmp_path / "fetched"; d.mkdir()
+        d = tmp_path / "fetched"
+        d.mkdir()
         self._fake_tool(d, "nvdisasm",
                         "echo \"nvdisasm fatal : Cannot decode architecture 'SM100'\" >&2\nexit 1\n")
         self._fake_tool(d, "cuobjdump", "echo ok\n")
         tc = toolchain._from_dir(d, "fetched")
         with pytest.raises(toolchain.ToolchainError, match="CUXRAY_REDIST_VERSION"):
             tc.run("nvdisasm", ["-c", "x.cubin"])
+
+    @pytest.mark.parametrize(
+        ("flavor", "expected_version"),
+        [("old", toolchain.REDIST_VERSION_LEGACY),
+         ("std", toolchain.REDIST_VERSION)],
+    )
+    def test_flow_analysis_uses_per_artifact_fallback(
+        self, tmp_path, monkeypatch, flavor, expected_version,
+    ):
+        primary_dir = tmp_path / "primary"
+        primary_dir.mkdir()
+        primary = self._fake_tool(
+            primary_dir, "nvdisasm",
+            f"echo 'nvdisasm warning : switching to {flavor.title()} format' >&2\n"
+            "echo 'nvdisasm error : flow analysis is disabled' >&2\n"
+            "exit 1\n",
+        )
+        self._fake_tool(primary_dir, "cuobjdump", "echo primary-cuobjdump\n")
+        tc = toolchain._from_dir(primary_dir, "env")
+
+        fallback_dir = tmp_path / "fallback"
+        fallback_dir.mkdir()
+        self._fake_tool(fallback_dir, "nvdisasm", "echo fallback-flow-output\n")
+        self._fake_tool(fallback_dir, "cuobjdump", "echo fallback-cuobjdump\n")
+        fallback = toolchain._from_dir(fallback_dir, "fetched")
+        fetches = []
+
+        def fake_fetch(**kwargs):
+            fetches.append(kwargs)
+            return fallback
+
+        monkeypatch.delenv("CUXRAY_NO_FETCH", raising=False)
+        monkeypatch.setattr(toolchain, "_fetch", fake_fetch)
+
+        assert tc.run("nvdisasm", ["-c", "-plr", "x.cubin"]).strip() == \
+            "fallback-flow-output"
+        assert tc.run("nvdisasm", ["-cfg", "x.cubin"]).strip() == \
+            "fallback-flow-output"
+        assert fetches == [{"quiet": True, "version": expected_version}]
+        assert tc.nvdisasm == primary
+        assert tc.origin == "env"
+        assert tc.describe()["flow_analysis_fallbacks"][flavor]["toolkit"] == \
+            expected_version
+
+    def test_flow_analysis_fallback_honors_no_fetch(self, tmp_path, monkeypatch):
+        d = tmp_path / "primary"
+        d.mkdir()
+        self._fake_tool(
+            d, "nvdisasm",
+            "echo 'nvdisasm warning : switching to Old format' >&2\n"
+            "echo 'nvdisasm error : flow analysis is disabled' >&2\n"
+            "exit 1\n",
+        )
+        self._fake_tool(d, "cuobjdump", "echo ok\n")
+        tc = toolchain._from_dir(d, "env")
+        monkeypatch.setenv("CUXRAY_NO_FETCH", "1")
+        with pytest.raises(toolchain.ToolchainError, match="CUXRAY_NO_FETCH"):
+            tc.run("nvdisasm", ["-c", "-plr", "x.cubin"])
+
+    def test_flow_fallback_versions_are_in_cache_fingerprint(self, tmp_path):
+        for name in ("nvdisasm", "cuobjdump"):
+            self._fake_tool(tmp_path, name, "echo fake-version\n")
+        tc = toolchain._from_dir(tmp_path, "env")
+        fingerprint = tc.versions()
+        assert f"flow:{toolchain.REDIST_VERSION}" in fingerprint
+        assert fingerprint.endswith(toolchain.REDIST_VERSION_LEGACY)
+
+    def test_report_describes_fallback_after_analysis(self, tmp_path, monkeypatch):
+        primary_dir = tmp_path / "primary"
+        primary_dir.mkdir()
+        for name in ("nvdisasm", "cuobjdump"):
+            self._fake_tool(primary_dir, name, "echo primary-version\n")
+        tc = toolchain._from_dir(primary_dir, "env")
+
+        fallback_dir = tmp_path / "fallback"
+        fallback_dir.mkdir()
+        for name in ("nvdisasm", "cuobjdump"):
+            self._fake_tool(fallback_dir, name, "echo fallback-version\n")
+        fallback = toolchain._from_dir(fallback_dir, "fetched")
+
+        artifact = tmp_path / "kernel.cubin"
+        artifact.write_bytes(b"cubin")
+        monkeypatch.setattr(report, "ingest", lambda *args, **kwargs: [object()])
+
+        def analyze(*args, **kwargs):
+            tc._flow_toolchains["old"] = fallback
+            return []
+
+        monkeypatch.setattr(report, "_analyze_units", analyze)
+        doc = report.build_report(artifact, tc)
+        assert doc["toolchain"]["flow_analysis_fallbacks"]["old"]["toolkit"] == \
+            toolchain.REDIST_VERSION_LEGACY
 
     def test_no_toolchain_no_fetch_raises(self, monkeypatch):
         monkeypatch.delenv("CUXRAY_TOOLCHAIN", raising=False)

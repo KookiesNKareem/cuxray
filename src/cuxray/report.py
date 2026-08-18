@@ -1,27 +1,3 @@
-"""Assemble the cuxray report document (JSON schema `cuxray.schema/1`).
-
-Schema shape (frozen at v0.1 — additive changes only after that):
-
-{
-  "schema": "cuxray.schema/1",
-  "cuxray_version": "0.1.0",
-  "artifact": {"path": str, "sha256": str},
-  "toolchain": {...},
-  "units": [{
-      "label": str, "arch": "sm_120a", "cubin_sha256": str,
-      "kernels": [{
-          "name": str, "demangled": str,
-          "resources": {"regs": int, "stack_frame": int, "shared_section": int,
-                         "smem_static": int, "local": int, "constant": int},
-          "pressure": {...},   # analyze.liveness.pressure()
-          "spills": {...},     # analyze.spillmap.spill_map()
-          "occupancy": {...} | null,   # occupancy.Occupancy.to_dict() + "cliffs"
-          "notes": [str],
-      }],
-  }],
-}
-"""
-
 from __future__ import annotations
 
 import hashlib
@@ -34,8 +10,8 @@ from typing import Optional
 
 from . import SCHEMA_VERSION, __version__
 from .analyze.access import analyze_accesses
-from .analyze.roofline import classify, loop_report
 from .analyze.liveness import pressure
+from .analyze.roofline import classify, loop_report
 from .analyze.spillmap import spill_map
 from .archspec import lookup
 from .ingest import CubinUnit, IngestError, ingest
@@ -392,19 +368,20 @@ def build_report(
         if not units:
             raise IngestError(f"no cubins matching --arch {arch} in {p}")
     try:
+        analyzed_units = _analyze_units(
+            units, tc, use_cache=use_cache,
+            threads=total_threads, carveout_kb=carveout_kb,
+            kernel_re=kernel_re, level=level, fast=fast,
+            smem_dynamic=smem_dynamic, block_dims=block_dims,
+            peak_tflops=peak_tflops, peak_gbs=peak_gbs,
+            grid_dims=grid_dims,
+        )
         return {
             "schema": SCHEMA_VERSION,
             "cuxray_version": __version__,
             "artifact": {"path": str(p), "sha256": _sha256(p) if p.is_file() else None},
             "toolchain": tc.describe(),
-            "units": _analyze_units(
-                units, tc, use_cache=use_cache,
-                threads=total_threads, carveout_kb=carveout_kb,
-                kernel_re=kernel_re, level=level, fast=fast,
-                smem_dynamic=smem_dynamic, block_dims=block_dims,
-                peak_tflops=peak_tflops, peak_gbs=peak_gbs,
-                grid_dims=grid_dims,
-            ),
+            "units": analyzed_units,
         }
     finally:
         workdir_ctx.cleanup()
