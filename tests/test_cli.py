@@ -67,6 +67,50 @@ class TestReport:
         assert "invalid --kernel regex" in res.output
 
 
+class TestDemo:
+    @staticmethod
+    def report():
+        return {
+            "units": [{
+                "label": "spill.sm_90.cubin",
+                "arch": "sm_90",
+                "kernels": [{
+                    "name": "_Z6spillyPKfPfii",
+                    "demangled": "spilly(float const*, float*, int, int)",
+                    "resources": {"regs": 32},
+                    "occupancy": {},
+                    "access": {},
+                    "roofline": [],
+                    "spills": {
+                        "store_instructions": 154,
+                        "load_instructions": 155,
+                        "store_bytes": 620,
+                        "load_bytes": 624,
+                        "by_line": [{"file": "spill.cu", "line": 14}],
+                    },
+                }],
+            }],
+        }
+
+    def test_human_output(self, runner, monkeypatch):
+        monkeypatch.setattr(cli, "build_report", lambda path, tc, **kw: self.report())
+        res = runner.invoke(cli.main, ["demo"])
+        assert res.exit_code == 0, res.output
+        assert "eliminate register spills" in res.output
+        assert "154 spill stores / 155 loads" in res.output
+        assert "No GPU or CUDA runtime was used" in res.output
+
+    def test_json_output(self, runner, monkeypatch):
+        monkeypatch.setattr(cli, "build_report", lambda path, tc, **kw: self.report())
+        res = runner.invoke(cli.main, ["demo", "--json"])
+        assert res.exit_code == 0, res.output
+        doc = json.loads(res.output)
+        assert doc["schema"] == "cuxray.demo/1"
+        assert doc["artifact"] == "spill.sm_90.cubin"
+        assert doc["finding"]["title"] == "eliminate register spills"
+        assert doc["gpu_required"] is False
+
+
 class TestGate:
     def test_pass_and_fail_exit_codes(self, runner, tmp_path):
         f = tmp_path / "x.cubin"

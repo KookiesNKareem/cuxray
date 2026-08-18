@@ -47,6 +47,15 @@ jobs:
           assert k['spills']['store_bytes'] == 548, k
           print('container e2e assertions OK')
           "
+          docker run --rm --platform "${{ matrix.platform }}" \
+            --mount "type=bind,source=/tmp/cuxray-cache,target=/cuxray-cache" \
+            cuxray:smoke demo --json > /tmp/demo.json
+          python -c "
+          import json
+          d = json.load(open('/tmp/demo.json'))
+          assert d['finding']['title'] == 'eliminate register spills', d
+          print('container demo OK')
+          "
 
   publish:
     name: publish multi-architecture image

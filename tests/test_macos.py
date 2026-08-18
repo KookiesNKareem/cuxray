@@ -19,6 +19,7 @@ def test_command_name_skips_global_flags():
 
 def test_delegates_only_toolchain_commands_on_macos():
     assert entry.should_delegate(["report", "k.cubin"], platform="darwin")
+    assert entry.should_delegate(["demo"], platform="darwin")
     assert entry.should_delegate(["triton", "cache"], platform="darwin")
     assert not entry.should_delegate(["report", "--help"], platform="darwin")
     assert not entry.should_delegate(["occupancy"], platform="darwin")

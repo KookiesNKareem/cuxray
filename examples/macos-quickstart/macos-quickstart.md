@@ -1,8 +1,8 @@
 # Analyze a CUDA kernel on a Mac in two minutes
 
-This example demonstrates how to use cuxray from a real CUDA binary and to an actionable kernel
-optimization. It does not require an NVIDIA GPU, the CUDA toolkit, or a Linux
-machine.
+This example demonstrates how cuxray turns a real CUDA binary into an
+actionable optimization. It does not require an NVIDIA GPU, the CUDA toolkit,
+a Linux machine, or a repository checkout.
 
 The included kernel deliberately keeps too much per-thread state live. It was
 compiled with a 32-register cap, forcing values into local memory. cuxray finds
@@ -19,23 +19,15 @@ pipx ensurepath
 pipx install cuxray
 ```
 
-Open a new terminal if `pipx ensurepath` asks you to. If you do not already
-have this repository checked out, get the example with:
-
-```console
-git clone https://github.com/KookiesNKareem/cuxray.git
-cd cuxray
-```
-
 Docker Desktop and OrbStack also work. If either is already running, you do not
 need Colima.
 
 ## 2. Analyze the example
 
-From the root of this repository, run:
+Run:
 
 ```console
-cuxray advise tests/fixtures/bin/spill.sm_90.cubin --threads 256
+cuxray demo
 ```
 
 On the first analysis, cuxray explains why it needs a Linux helper and asks
@@ -64,14 +56,14 @@ That is the optimization target: the accumulator array in
 register cap forces part of it into local memory. cuxray identifies both the
 problem and the hottest line without running the kernel.
 
-For the underlying measurements, run:
+For machine-readable output, run:
 
 ```console
-cuxray report tests/fixtures/bin/spill.sm_90.cubin --threads 256
+cuxray demo --json
 ```
 
-The report includes the 32-register allocation, 620 bytes of spill stores, 624
-bytes of spill loads, source-line attribution, and modeled occupancy.
+The bundled binary and its matching [`spill.cu`](spill.cu) source are also
+available in the repository for deeper inspection.
 
 ## What happened behind the scenes?
 

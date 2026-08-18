@@ -37,6 +37,7 @@ $ cuxray advise w4a8_gemv.sm_80.cubin --threads 256
 
 ```console
 pip install cuxray # CPU-only (no CUDA, no GPU)
+cuxray demo # bundled example, no repository checkout
 cuxray advise mykernels.so --threads 256 # ranked fixes for every kernel
 cuxray solve mykernels.so --threads 256 # verified swizzle for any bank conflict
 cuxray gate mykernels.so "spill_instrs==0" # exit 1 in CI on a regression
@@ -49,10 +50,11 @@ The command is the same on a Mac. Install cuxray, then use it normally:
 ```console
 brew install pipx colima docker # one-time prerequisites
 pipx install cuxray
-cuxray advise mykernels.so --threads 256
+cuxray demo
 ```
 
-No CUDA artifact handy? Run the **[two-minute macOS example](examples/macos-quickstart/macos-quickstart.md)** using the kernel binary checked into this repository.
+`cuxray demo` analyzes a bundled spill-heavy kernel, so the first run needs no
+repository checkout or CUDA artifact. See the **[two-minute macOS example](examples/macos-quickstart/macos-quickstart.md)** for the expected finding.
 
 NVIDIA publishes its CUDA binary-analysis utilities for Linux, not macOS. On the first analysis cuxray offers to start a lightweight Linux helper through an existing Docker-compatible runtime. If neither Docker Desktop nor a runtime is installed, the one-time setup is:
 ```console
@@ -75,6 +77,7 @@ fetches pinned, sha256-verified NVIDIA binary utilities; nothing else to install
 
 | command | what you get |
 |---|---|
+| `demo` | bundled register-spill analysis; no repository checkout or GPU |
 | `advise` · `survey` | ranked, impact-weighted fixes for one kernel · for a whole library |
 | `report` · `ls` | spills, register-pressure curve, occupancy + cliffs, access patterns · fast listing |
 | `triton` | audit a Triton / `torch.compile` cache: metadata-exact dynamic-smem occupancy, source-line attribution, and `--group` to flag spilling autotune candidates before you benchmark them |

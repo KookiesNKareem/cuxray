@@ -79,6 +79,54 @@ def main(debug):
 
 
 @main.command()
+@click.option("--json", "as_json", is_flag=True, help="emit JSON")
+def demo(as_json):
+    """Analyze a bundled register-spill example."""
+    from importlib.resources import as_file, files
+
+    from .advise import advise as make_actions
+
+    resource = files("cuxray").joinpath("data", "spill.sm_90.cubin")
+    with as_file(resource) as path:
+        doc = _report_or_die(path, threads="256")
+
+    result = None
+    for unit in doc["units"]:
+        for kernel in unit["kernels"]:
+            for action in make_actions(kernel, arch=unit.get("arch")):
+                if action["title"] == "eliminate register spills":
+                    result = {
+                        "schema": "cuxray.demo/1",
+                        "artifact": "spill.sm_90.cubin",
+                        "source": "spill.cu",
+                        "arch": unit.get("arch"),
+                        "kernel": kernel.get("demangled") or kernel["name"],
+                        "finding": action,
+                        "gpu_required": False,
+                    }
+                    break
+            if result:
+                break
+        if result:
+            break
+
+    if result is None:
+        raise click.ClickException("the bundled demo did not produce its expected finding")
+    if as_json:
+        click.echo(json.dumps(result, indent=2))
+        return
+
+    action = result["finding"]
+    console.print("[bold]cuxray demo[/]  [dim]· bundled register-spill kernel[/]")
+    console.print(f"\n[bold]{result['kernel']}[/]  [dim]({result['arch']})[/]")
+    console.print(f"  [red]{action['title']}[/]")
+    console.print(f"  {action['detail']}")
+    for evidence in action.get("evidence", []):
+        console.print(f"  [dim]evidence: {evidence}[/]")
+    console.print("\n[green]Complete.[/] No GPU or CUDA runtime was used.")
+
+
+@main.command()
 @click.argument("path", type=click.Path(exists=True))
 @click.option("--kernel", "kernel_re", default=None, help="regex filter on kernel names")
 @click.option("--json", "as_json", is_flag=True, help="emit JSON")
