@@ -1,0 +1,86 @@
+name: Container
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: smoke (${{ matrix.platform }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        platform: [linux/amd64, linux/arm64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - name: Build native-platform image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          platforms: ${{ matrix.platform }}
+          tags: cuxray:smoke
+      - name: Pure CLI smoke
+        run: >-
+          docker run --rm --platform "${{ matrix.platform }}" cuxray:smoke
+          occupancy --arch sm_120 --regs 168 --threads 256 --json
+      - name: End-to-end disassembly smoke
+        run: |
+          mkdir -p /tmp/cuxray-cache
+          docker run --rm --platform "${{ matrix.platform }}" \
+            --mount "type=bind,source=$PWD,target=/work" \
+            --mount "type=bind,source=/tmp/cuxray-cache,target=/cuxray-cache" \
+            cuxray:smoke report /work/tests/fixtures/bin/spill.sm_120a.cubin \
+            --threads 256 --json > /tmp/report.json
+          python -c "
+          import json
+          d = json.load(open('/tmp/report.json'))
+          k = d['units'][0]['kernels'][0]
+          assert k['resources']['regs'] == 32, k
+          assert k['spills']['store_bytes'] == 548, k
+          print('container e2e assertions OK')
+          "
+
+  publish:
+    name: publish multi-architecture image
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: smoke
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify release tag matches package version
+        run: |
+          PACKAGE_VERSION=$(python -c "import re; print(re.search(r'^version = \"([^\"]+)', open('pyproject.toml').read(), re.M).group(1))")
+          test "v${PACKAGE_VERSION}" = "${GITHUB_REF_NAME}"
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/kookiesnkareem/cuxray
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}

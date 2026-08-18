@@ -36,11 +36,36 @@ $ cuxray advise w4a8_gemv.sm_80.cubin --threads 256
 ## Quick start
 
 ```console
-pip install cuxray                            # CPU-only (no CUDA, no GPU)
-cuxray advise mykernels.so --threads 256      # ranked fixes for every kernel
-cuxray solve mykernels.so --threads 256       # verified swizzle for any bank conflict
-cuxray gate mykernels.so "spill_instrs==0"    # exit 1 in CI on a regression
+pip install cuxray # CPU-only (no CUDA, no GPU)
+cuxray advise mykernels.so --threads 256 # ranked fixes for every kernel
+cuxray solve mykernels.so --threads 256 # verified swizzle for any bank conflict
+cuxray gate mykernels.so "spill_instrs==0" # exit 1 in CI on a regression
 ```
+
+### macOS
+
+The command is the same on a Mac. Install cuxray, then use it normally:
+
+```console
+brew install pipx colima docker # one-time prerequisites
+pipx install cuxray
+cuxray advise mykernels.so --threads 256
+```
+
+No CUDA artifact handy? Run the **[two-minute macOS example](examples/macos-quickstart/macos-quickstart.md)** using the kernel binary checked into this repository.
+
+NVIDIA publishes its CUDA binary-analysis utilities for Linux, not macOS. On the first analysis cuxray offers to start a lightweight Linux helper through an existing Docker-compatible runtime. If neither Docker Desktop nor a runtime is installed, the one-time setup is:
+```console
+brew install colima docker
+```
+
+Once you rerun the original cuxray command and approve the setup prompt, cuxray starts an isolated native-architecture Colima profile, downloads its version-matched multi-architecture image, preserves the current directory and exit code, and caches the NVIDIA utilities under `~/Library/Caches/cuxray`.
+
+Subsequent commands are transparent. Pure commands such as `occupancy`, `roofline`, `schema`, `--help`, and `--version` stay native.
+
+Docker Desktop also works and is used automatically when already running.
+Run `cuxray doctor` to inspect the helper, or `colima --profile cuxray stop`
+when you want to stop the dedicated VM.
 
 Point it at anything holding cubins: a `.cubin`, a host `.so`, a directory of
 Triton caches, a `.ptx`, even a wheel you `pip download`ed. On first run it
@@ -97,8 +122,8 @@ $ cuxray solve bank_conflict.cubin --threads 256
 - Static facts only: cache behavior and achieved bandwidth need a profiler;
   those accesses are reported as unanalyzable, not guessed.
 - Pass `--threads` / `--smem-dynamic` when the binary carries no launch metadata
-  (cuxray warns when it matters). Linux only; build with `-lineinfo` for source
-  attribution.
+  (cuxray warns when it matters). Analysis is native on Linux and transparently
+  containerized on macOS; build with `-lineinfo` for source attribution.
 
 ## License
 
