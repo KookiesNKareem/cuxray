@@ -18,6 +18,7 @@ from typing import TextIO
 from . import __version__
 
 OFFICIAL_IMAGE = f"ghcr.io/kookiesnkareem/cuxray:{__version__}"
+OFFICIAL_COMPILER_IMAGE = f"ghcr.io/kookiesnkareem/cuxray:{__version__}-nvcc"
 COLIMA_PROFILE = "cuxray"
 COLIMA_DOCKER_CONTEXT = f"colima-{COLIMA_PROFILE}"
 _FORWARDED_ENV = (
@@ -40,7 +41,12 @@ def cache_dir() -> Path:
     return (Path.home() / "Library" / "Caches" / "cuxray").resolve()
 
 
-def image_name() -> str:
+def image_name(compiler: bool = False) -> str:
+    if compiler:
+        return os.environ.get(
+            "CUXRAY_COMPILER_IMAGE",
+            os.environ.get("CUXRAY_CONTAINER_IMAGE", OFFICIAL_COMPILER_IMAGE),
+        )
     return os.environ.get("CUXRAY_CONTAINER_IMAGE", OFFICIAL_IMAGE)
 
 
@@ -163,10 +169,24 @@ ENTRYPOINT [\"cuxray\"]
     return local
 
 
-def ensure_image(docker: str, stream: TextIO = sys.stderr) -> str:
-    image = image_name()
+def ensure_image(
+    docker: str,
+    stream: TextIO = sys.stderr,
+    compiler: bool = False,
+) -> str:
+    image = image_name(compiler)
     if _quiet_ok([docker, "image", "inspect", image]):
         return image
+
+    if compiler and not _confirm(
+        "cuxray tune needs the optional CUDA compiler helper.\n"
+        "Download it now? [Y/n] ",
+        stream,
+    ):
+        raise MacRuntimeError(
+            "optional compiler helper is not installed; rerun and answer yes, "
+            "or run tune on Linux with a CUDA toolkit"
+        )
 
     stream.write(f"cuxray: downloading {image} (one-time setup)...\n")
     stream.flush()
@@ -179,10 +199,15 @@ def ensure_image(docker: str, stream: TextIO = sys.stderr) -> str:
     )
     if pull.returncode == 0:
         return image
-    if image == OFFICIAL_IMAGE:
+    if not compiler and image == OFFICIAL_IMAGE:
         return _bootstrap_image(docker, stream)
     detail = (pull.stderr or "").strip().splitlines()
     reason = detail[-1] if detail else "pull failed"
+    if compiler:
+        raise MacRuntimeError(
+            "could not download the optional compiler helper; run tune on Linux "
+            f"with a CUDA toolkit instead ({reason})"
+        )
     raise MacRuntimeError(f"could not pull {image}: {reason}")
 
 
@@ -224,10 +249,14 @@ def container_command(
     return command
 
 
-def run_in_container(args: list[str], stream: TextIO = sys.stderr) -> int:
+def run_in_container(
+    args: list[str],
+    stream: TextIO = sys.stderr,
+    compiler: bool = False,
+) -> int:
     try:
         docker = ensure_runtime(stream)
-        image = ensure_image(docker, stream)
+        image = ensure_image(docker, stream, compiler=compiler)
         cache = cache_dir()
         cache.mkdir(parents=True, exist_ok=True)
         command = container_command(docker, image, args, cache=cache)
@@ -255,13 +284,21 @@ def doctor(stream: TextIO = sys.stdout) -> int:
         os.environ["DOCKER_CONTEXT"] = COLIMA_DOCKER_CONTEXT
         ready = True
     image = image_name()
+    compiler_image = image_name(compiler=True)
     present = bool(docker and ready and _quiet_ok([docker, "image", "inspect", image]))
+    compiler_present = bool(
+        docker and ready and _quiet_ok([docker, "image", "inspect", compiler_image])
+    )
 
     stream.write(f"platform: darwin / {platform.machine()}\n")
     stream.write(f"docker CLI: {'yes' if docker else 'no'}\n")
     stream.write(f"container runtime: {'ready' if ready else 'not running'}\n")
     stream.write(f"colima: {'installed' if colima else 'not installed'}\n")
     stream.write(f"image: {image} ({'ready' if present else 'downloaded on first run'})\n")
+    stream.write(
+        f"compiler image: {compiler_image} "
+        f"({'ready' if compiler_present else 'downloaded on first tune'})\n"
+    )
     stream.write(f"cache: {cache_dir()}\n")
     if ready:
         return 0

@@ -68,6 +68,20 @@ jobs:
           assert d['changed'] == 0, d
           print('self-diff clean')
           "
+      - name: ZIP, wheel, and PT2 archive ingestion
+        run: |
+          python -m zipfile -c /tmp/sample.pt2 tests/fixtures/bin/spill.sm_120a.cubin
+          python -m zipfile -c /tmp/sample.whl tests/fixtures/bin/multiarch.o
+          cuxray ls /tmp/sample.pt2 --json > /tmp/pt2.json
+          cuxray ls /tmp/sample.whl --json > /tmp/wheel.json
+          python -c "
+          import json
+          pt2 = json.load(open('/tmp/pt2.json'))
+          wheel = json.load(open('/tmp/wheel.json'))
+          assert len(pt2['units']) == 1, pt2
+          assert {u['arch'] for u in wheel['units']} == {'sm_90', 'sm_120'}, wheel
+          print('archive ingestion OK')
+          "
 
   release-artifact:
     name: wheel builds, installs, and runs

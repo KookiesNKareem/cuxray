@@ -1,0 +1,27 @@
+FROM python:3.12-slim
+
+LABEL org.opencontainers.image.source="https://github.com/KookiesNKareem/cuxray"
+LABEL org.opencontainers.image.description="Optional CUDA compiler helper for cuxray"
+LABEL org.opencontainers.image.licenses="Apache-2.0 AND LicenseRef-NVIDIA-CUDA-EULA"
+LABEL org.opencontainers.image.documentation="https://docs.nvidia.com/cuda/eula/index.html"
+
+ARG CUDA_REDIST_VERSION=13.3.1
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends binutils ca-certificates g++ \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY scripts/install_cuda_compiler.py /tmp/install_cuda_compiler.py
+RUN python /tmp/install_cuda_compiler.py "$CUDA_REDIST_VERSION" /opt/cuda \
+    && rm /tmp/install_cuda_compiler.py
+
+WORKDIR /opt/cuxray
+COPY pyproject.toml README.md LICENSE ./
+COPY src ./src
+RUN python -m pip install --no-cache-dir .
+
+ENV CUDA_HOME=/opt/cuda
+ENV PATH=/opt/cuda/bin:$PATH
+ENV CUXRAY_CACHE=/cuxray-cache
+WORKDIR /work
+ENTRYPOINT ["cuxray"]

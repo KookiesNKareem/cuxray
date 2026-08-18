@@ -45,7 +45,7 @@ def main() -> None:
                 raise SystemExit(macos.run_in_container(args))
             raise SystemExit(macos.doctor())
         if should_delegate(args):
-            raise SystemExit(macos.run_in_container(args))
+            raise SystemExit(macos.run_in_container(args, compiler=command == "tune"))
 
     from .cli import main as cli_main
 

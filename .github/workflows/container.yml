@@ -57,10 +57,42 @@ jobs:
           print('container demo OK')
           "
 
+  compiler-smoke:
+    name: compiler smoke (${{ matrix.platform }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        platform: [linux/amd64, linux/arm64]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - name: Build compiler image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.nvcc
+          load: true
+          platforms: ${{ matrix.platform }}
+          tags: cuxray:compiler-smoke
+      - name: Compile and analyze a CUDA source
+        run: |
+          docker run --rm --platform "${{ matrix.platform }}" \
+            --mount "type=bind,source=$PWD,target=/work" \
+            cuxray:compiler-smoke tune /work/tests/fixtures/src/saxpy.cu \
+            --arch sm_90 --threads 256 --json > /tmp/tune.json
+          python -c "
+          import json
+          d = json.load(open('/tmp/tune.json'))
+          assert d['schema'] == 'cuxray.tunematrix/1', d
+          assert d['failed'] == 0 and len(d['variants']) == 1, d
+          print('compiler image tune OK')
+          "
+
   publish:
     name: publish multi-architecture image
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: smoke
+    needs: [smoke, compiler-smoke]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -93,3 +125,19 @@ jobs:
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+      - id: compiler-meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/kookiesnkareem/cuxray
+          tags: |
+            type=semver,pattern={{version}},suffix=-nvcc
+            type=semver,pattern={{major}}.{{minor}},suffix=-nvcc
+            type=raw,value=latest-nvcc
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.nvcc
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.compiler-meta.outputs.tags }}
+          labels: ${{ steps.compiler-meta.outputs.labels }}

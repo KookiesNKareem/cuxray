@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import concurrent.futures as cf
 import itertools
+import os
 import shutil
 import subprocess
 import tempfile
@@ -24,6 +25,7 @@ from .occupancy import compute
 from .parse import cfgdot, resusage, sass
 from .toolchain import Toolchain, ToolchainError
 
+
 def _reserved(arch: str) -> int:
     from .archspec import lookup
     try:
@@ -31,18 +33,21 @@ def _reserved(arch: str) -> int:
     except KeyError:
         return 1024
 
-
-
 def find_nvcc() -> str:
     for cand in ("nvcc",):
         path = shutil.which(cand)
         if path:
             return path
-    import os
     for var in ("CUDA_HOME", "CUDA_PATH"):
         home = os.environ.get(var)
         if home and (Path(home) / "bin" / "nvcc").exists():
             return str(Path(home) / "bin" / "nvcc")
+    if os.environ.get("CUXRAY_CONTAINER_ACTIVE"):
+        raise ToolchainError(
+            "`cuxray tune` needs nvcc, which is not included in the standard "
+            "macOS helper. Run tune on Linux with a CUDA toolkit, or analyze "
+            "prebuilt variants with `cuxray compare`."
+        )
     raise ToolchainError(
         "nvcc not found — `cuxray tune` compiles CUDA C++ and needs a local "
         "CUDA toolkit (the auto-fetched tools cover binaries and PTX only)"

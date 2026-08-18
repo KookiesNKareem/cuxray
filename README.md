@@ -70,8 +70,8 @@ Run `cuxray doctor` to inspect the helper, or `colima --profile cuxray stop`
 when you want to stop the dedicated VM.
 
 Point it at anything holding cubins: a `.cubin`, a host `.so`, a directory of
-Triton caches, a `.ptx`, even a wheel you `pip download`ed. On first run it
-fetches pinned, sha256-verified NVIDIA binary utilities; nothing else to install.
+Triton caches, a `.ptx`, or a ZIP-based `.whl`, `.zip`, or `.pt2` archive. On
+first run it fetches pinned, sha256-verified NVIDIA binary utilities.
 
 ## What it does
 
@@ -120,13 +120,17 @@ $ cuxray solve bank_conflict.cubin --threads 256
 ## Notes
 
 - Inputs: `.cubin`, host ELF (`.so`/`.o`/exe, cubins extracted), directories
-  (Triton caches), `.ptx`. Compute capability 7.5–12.x (Turing → Blackwell,
-  incl. `sm_120a`).
+  (Triton caches), `.ptx`, and ZIP-based `.whl`/`.zip`/`.pt2` archives. Compute
+  capability 7.5–12.x (Turing → Blackwell, incl. `sm_120a`).
 - Static facts only: cache behavior and achieved bandwidth need a profiler;
   those accesses are reported as unanalyzable, not guessed.
 - Pass `--threads` / `--smem-dynamic` when the binary carries no launch metadata
   (cuxray warns when it matters). Analysis is native on Linux and transparently
   containerized on macOS; build with `-lineinfo` for source attribution.
+- `cuxray tune` compiles CUDA C++ and requires `nvcc`. On macOS, its first run
+  offers to download a separate, version-matched compiler helper; other commands
+  continue using the smaller analysis image. The helper is built from pinned,
+  checksum-verified NVIDIA redistributable components and includes their licenses.
 
 ## License
 
